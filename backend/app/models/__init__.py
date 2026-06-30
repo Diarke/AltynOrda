@@ -1,0 +1,26 @@
+"""ORM models package – import all models for Alembic discovery."""
+
+from app.models.achievement import Achievement
+from app.models.artifact import Artifact
+from app.models.certificate import Certificate
+from app.models.chat_history import ChatHistory
+from app.models.city import City
+from app.models.embedding import EMBEDDING_DIMENSION, DocumentEmbedding
+from app.models.historical_document import HistoricalDocument
+from app.models.progress import Progress
+from app.models.quest import Quest
+from app.models.user import User
+
+__all__ = [
+    "Achievement",
+    "Artifact",
+    "Certificate",
+    "ChatHistory",
+    "City",
+    "DocumentEmbedding",
+    "EMBEDDING_DIMENSION",
+    "HistoricalDocument",
+    "Progress",
+    "Quest",
+    "User",
+]
