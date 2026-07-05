@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.auth.dependencies import CurrentUser
+from app.auth.dependencies import UserOrAdmin
 from app.dependencies.services import get_progress_service
 from app.schemas.common import SuccessResponse
 from app.schemas.progress import ProgressCreateRequest, ProgressResponse, UserProgressSummary
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/progress", tags=["Progress"])
     summary="Get current user progress summary",
 )
 async def get_progress(
-    current_user: CurrentUser,
+    current_user: UserOrAdmin,
     service: Annotated[ProgressService, Depends(get_progress_service)],
 ) -> SuccessResponse[UserProgressSummary]:
     summary = await service.get_user_progress(current_user)
@@ -33,7 +33,7 @@ async def get_progress(
 )
 async def create_progress(
     data: ProgressCreateRequest,
-    current_user: CurrentUser,
+    current_user: UserOrAdmin,
     service: Annotated[ProgressService, Depends(get_progress_service)],
 ) -> SuccessResponse[ProgressResponse]:
     progress = await service.create_progress(current_user, data)

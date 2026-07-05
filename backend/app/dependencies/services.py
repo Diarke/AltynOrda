@@ -10,12 +10,14 @@ from app.core.unit_of_work import UnitOfWork
 from app.database.redis import get_redis_client
 from app.dependencies.database import get_uow
 from app.rag.pipeline import RAGPipeline
+from app.services.admin import AdminService
 from app.services.auth import AuthService
 from app.services.certificate import CertificateService
 from app.services.chat import ChatService
 from app.services.city import CityService
 from app.services.progress import ProgressService
 from app.services.quiz import QuizService
+from app.services.storage import StorageService
 from app.services.user import UserService
 
 
@@ -67,3 +69,11 @@ def get_chat_service(
 
 def get_quiz_service(uow: Annotated[UnitOfWork, Depends(get_uow)]) -> QuizService:
     return QuizService(uow)
+
+
+def get_admin_service(uow: Annotated[UnitOfWork, Depends(get_uow)]) -> AdminService:
+    return AdminService(uow)
+
+
+def get_storage_service() -> StorageService:
+    return StorageService()

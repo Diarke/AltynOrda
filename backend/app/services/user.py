@@ -23,6 +23,7 @@ class UserService:
             role=user.role,
             is_active=user.is_active,
             bio=user.bio,
+            avatar_url=user.avatar_url,
         )
 
     async def update_profile(self, user: User, data: UserUpdateRequest) -> UserResponse:
@@ -30,6 +31,11 @@ class UserService:
             user.full_name = data.full_name
         if data.bio is not None:
             user.bio = data.bio
+        updated = await self._uow.users.update(user)
+        return await self.get_profile(updated)
+
+    async def update_avatar(self, user: User, avatar_url: str) -> UserResponse:
+        user.avatar_url = avatar_url
         updated = await self._uow.users.update(user)
         return await self.get_profile(updated)
 
@@ -45,4 +51,5 @@ class UserService:
             role=user.role,
             is_active=user.is_active,
             bio=user.bio,
+            avatar_url=user.avatar_url,
         )

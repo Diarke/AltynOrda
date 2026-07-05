@@ -52,5 +52,15 @@ async def require_admin(
     return current_user
 
 
+async def require_user_or_admin(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> User:
+    """Require a non-guest account."""
+    if current_user.role not in {UserRole.USER, UserRole.ADMIN}:
+        raise PermissionDeniedException("Authentication required")
+    return current_user
+
+
 CurrentUser = Annotated[User, Depends(get_current_active_user)]
+UserOrAdmin = Annotated[User, Depends(require_user_or_admin)]
 AdminUser = Annotated[User, Depends(require_admin)]

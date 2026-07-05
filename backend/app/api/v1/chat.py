@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.auth.dependencies import CurrentUser
+from app.auth.dependencies import UserOrAdmin
 from app.dependencies.services import get_chat_service
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.schemas.common import SuccessResponse
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/chat", tags=["AI Historian"])
 )
 async def chat(
     data: ChatRequest,
-    current_user: CurrentUser,
+    current_user: UserOrAdmin,
     service: Annotated[ChatService, Depends(get_chat_service)],
 ) -> SuccessResponse[ChatResponse]:
     response = await service.chat(current_user, data)

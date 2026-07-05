@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.auth.dependencies import CurrentUser
+from app.auth.dependencies import UserOrAdmin
 from app.dependencies.services import get_quiz_service
 from app.schemas.common import SuccessResponse
 from app.schemas.quiz import QuizResultResponse, QuizSubmitRequest
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/quiz", tags=["Quiz"])
 )
 async def submit_quiz(
     data: QuizSubmitRequest,
-    current_user: CurrentUser,
+    current_user: UserOrAdmin,
     service: Annotated[QuizService, Depends(get_quiz_service)],
 ) -> SuccessResponse[QuizResultResponse]:
     result = await service.submit_quiz(current_user, data)

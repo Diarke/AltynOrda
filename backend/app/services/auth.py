@@ -80,4 +80,5 @@ class AuthService:
             role=user.role,
             is_active=user.is_active,
             bio=user.bio,
+            avatar_url=user.avatar_url,
         )

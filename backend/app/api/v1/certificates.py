@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.auth.dependencies import CurrentUser
+from app.auth.dependencies import UserOrAdmin
 from app.dependencies.services import get_certificate_service
 from app.schemas.certificate import CertificateCreateRequest, CertificateResponse
 from app.schemas.common import SuccessResponse
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/certificates", tags=["Certificates"])
 )
 async def issue_certificate(
     data: CertificateCreateRequest,
-    current_user: CurrentUser,
+    current_user: UserOrAdmin,
     service: Annotated[CertificateService, Depends(get_certificate_service)],
 ) -> SuccessResponse[CertificateResponse]:
     cert = await service.issue_certificate(current_user, data)
@@ -33,7 +33,7 @@ async def issue_certificate(
     summary="List current user certificates",
 )
 async def list_certificates(
-    current_user: CurrentUser,
+    current_user: UserOrAdmin,
     service: Annotated[CertificateService, Depends(get_certificate_service)],
 ) -> SuccessResponse[list[CertificateResponse]]:
     certs = await service.get_user_certificates(current_user)
