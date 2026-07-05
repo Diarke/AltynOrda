@@ -31,6 +31,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     progress_records: Mapped[list["Progress"]] = relationship(
         "Progress", back_populates="user", cascade="all, delete-orphan"

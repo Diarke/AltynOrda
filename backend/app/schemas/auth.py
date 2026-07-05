@@ -39,6 +39,7 @@ class UserResponse(BaseSchema):
     role: UserRole
     is_active: bool
     bio: str | None = None
+    avatar_url: str | None = None
 
 
 class UserUpdateRequest(BaseSchema):

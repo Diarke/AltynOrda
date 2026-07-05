@@ -6,9 +6,13 @@ from app.models.certificate import Certificate
 from app.models.chat_history import ChatHistory
 from app.models.city import City
 from app.models.embedding import EMBEDDING_DIMENSION, DocumentEmbedding
+from app.models.gamification_setting import GamificationSetting
+from app.models.gallery_image import GalleryImage
 from app.models.historical_document import HistoricalDocument
+from app.models.homepage_content import HomepageContent
 from app.models.progress import Progress
 from app.models.quest import Quest
+from app.models.system_setting import SystemSetting
 from app.models.user import User
 
 __all__ = [
@@ -19,8 +23,12 @@ __all__ = [
     "City",
     "DocumentEmbedding",
     "EMBEDDING_DIMENSION",
+    "GamificationSetting",
+    "GalleryImage",
     "HistoricalDocument",
+    "HomepageContent",
     "Progress",
     "Quest",
+    "SystemSetting",
     "User",
 ]

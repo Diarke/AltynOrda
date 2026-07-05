@@ -8,18 +8,27 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).parent.parent))
+
 from app.config import get_settings
 from app.database.base import Base
-from app.models import (  # noqa: F401 – register all models
+from app.models import (
     Achievement,
     Artifact,
     Certificate,
     ChatHistory,
     City,
     DocumentEmbedding,
+    GalleryImage,
+    GamificationSetting,
     HistoricalDocument,
+    HomepageContent,
     Progress,
     Quest,
+    SystemSetting,
     User,
 )
 

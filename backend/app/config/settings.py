@@ -25,7 +25,7 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = Field(
-        default="postgresql+asyncpg://orda:orda_secret@localhost:5432/orda"
+        default="postgresql+asyncpg://postgres:03h6913A@localhost:5432/orda"
     )
     db_pool_size: int = 20
     db_max_overflow: int = 10
@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     rag_chunk_overlap: int = 64
     rag_top_k: int = 5
     rag_similarity_threshold: float = 0.7
+
+    # Object storage (MinIO)
+    minio_endpoint: str = "localhost:9000"
+    minio_access_key: str = "orda"
+    minio_secret_key: str = "orda-secret"
+    minio_bucket_name: str = "orda-assets"
+    minio_secure: bool = False
+    minio_public_url: str | None = None
 
     # Rate limiting
     rate_limit_enabled: bool = False
