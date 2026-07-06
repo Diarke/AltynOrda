@@ -107,3 +107,22 @@ class LeaderboardResponse(BaseSchema):
     coins: list[LeaderboardEntry]
     achievements: list[LeaderboardEntry]
     streaks: list[LeaderboardEntry]
+
+
+class CosmeticItemResponse(BaseSchema):
+    key: str
+    name: str
+    cost_coins: int
+    unlocked: bool
+    equipped: bool
+
+
+class CosmeticCatalogResponse(BaseSchema):
+    items: list[CosmeticItemResponse]
+
+
+class CosmeticActionResponse(BaseSchema):
+    success: bool
+    message: str
+    equipped_frame: str
+    remaining_coins: int

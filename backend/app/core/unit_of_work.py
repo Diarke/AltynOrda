@@ -18,6 +18,7 @@ from app.repositories.progress import ProgressRepository
 from app.repositories.quest import QuestRepository
 from app.repositories.system_setting import SystemSettingRepository
 from app.repositories.user import UserRepository
+from app.repositories.user_cosmetic import UserCosmeticRepository
 
 
 class UnitOfWork:
@@ -39,6 +40,7 @@ class UnitOfWork:
         self.homepage_content = HomepageContentRepository(session)
         self.gamification_settings = GamificationSettingRepository(session)
         self.system_settings = SystemSettingRepository(session)
+        self.user_cosmetics = UserCosmeticRepository(session)
 
     async def __aenter__(self) -> "UnitOfWork":
         return self

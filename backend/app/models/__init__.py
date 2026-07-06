@@ -14,6 +14,7 @@ from app.models.progress import Progress
 from app.models.quest import Quest
 from app.models.system_setting import SystemSetting
 from app.models.user import User
+from app.models.user_cosmetic import UserCosmetic
 
 __all__ = [
     "Achievement",
@@ -31,4 +32,5 @@ __all__ = [
     "Quest",
     "SystemSetting",
     "User",
+    "UserCosmetic",
 ]

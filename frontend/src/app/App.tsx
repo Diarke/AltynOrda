@@ -132,6 +132,11 @@ function countCompletedByType(records: ApiProgressSummary["records"] | undefined
 
 // ─── Global Styles ────────────────────────────────────────────────────────────
 const GLOBAL_CSS = `
+  html { scroll-behavior: smooth; }
+
+  .nav-link { outline: none; }
+  .nav-link:focus-visible { outline: 2px solid #D4AF37; outline-offset: 4px; border-radius: 4px; }
+
   @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
   @keyframes pulse-gold { 0%,100%{box-shadow:0 0 0 0 rgba(212,175,55,0)} 50%{box-shadow:0 0 28px 6px rgba(212,175,55,0.25)} }
   @keyframes pulse-ring { 0%{transform:scale(1);opacity:0.6} 100%{transform:scale(2.5);opacity:0} }
@@ -391,10 +396,22 @@ function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
   );
 }
 
+const LANDING_SECTION_IDS = ["journey-section", "map-section", "artifacts-section", "ai-historian-section", "about-section"];
+
+// Sections below the fold can still resize as city/artifact data loads in, which
+// would otherwise leave the initial scroll target drifting out of view — realign once more shortly after.
+function smoothScrollToId(id: string) {
+  const scroll = () => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  scroll();
+  [400, 1200].forEach(delay => window.setTimeout(scroll, delay));
+}
+
 function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
   const { t } = useTranslation();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const pendingSectionRef = useRef<string | null>(null);
   const { user } = useAuthSession();
 
   useEffect(() => {
@@ -404,15 +421,63 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
   }, []);
 
   const inApp = ["dashboard", "city", "ai", "artifacts", "quests", "certificate", "passport"].includes(view);
+
+  // Highlight the section currently in view while scrolling the landing page.
+  useEffect(() => {
+    if (view !== "landing") { setActiveSection(null); return; }
+    const elements = LANDING_SECTION_IDS.map(id => document.getElementById(id)).filter((el): el is HTMLElement => el !== null);
+    if (elements.length === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => { if (entry.isIntersecting) setActiveSection(entry.target.id); });
+      },
+      { rootMargin: "-35% 0px -55% 0px", threshold: 0 }
+    );
+    elements.forEach(el => observer.observe(el));
+    return () => observer.disconnect();
+  }, [view]);
+
+  // If a section link is clicked from outside the landing page, jump to landing
+  // first, then smoothly scroll to the target section once it has mounted.
+  useEffect(() => {
+    if (view === "landing" && pendingSectionRef.current) {
+      const id = pendingSectionRef.current;
+      pendingSectionRef.current = null;
+      requestAnimationFrame(() => smoothScrollToId(id));
+    }
+  }, [view]);
+
+  const goToSection = (id: string) => {
+    if (view === "landing") {
+      smoothScrollToId(id);
+    } else {
+      pendingSectionRef.current = id;
+      onNav("landing");
+    }
+    setMenuOpen(false);
+  };
+
+  const scrollToTop = () => {
+    if (view === "landing") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      onNav("landing");
+    }
+  };
+
   const navLinks: [string, View][] = [
     [t("nav.journey"), "dashboard"], [t("nav.map"), "dashboard"], [t("nav.artifacts"), "artifacts"], [t("nav.aiHistorian"), "ai"],
+  ];
+  const sectionLinks: [string, string][] = [
+    [t("nav.journey"), "journey-section"], [t("nav.map"), "map-section"], [t("nav.artifacts"), "artifacts-section"],
+    [t("nav.aiHistorian"), "ai-historian-section"], [t("nav.about"), "about-section"],
   ];
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 transition-all duration-500"
       style={{ background: scrolled || inApp ? "rgba(15,17,21,0.92)" : "transparent", backdropFilter: scrolled || inApp ? "blur(20px)" : "none", borderBottom: scrolled || inApp ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
       <div className="max-w-[1440px] mx-auto px-6 lg:px-12 h-16 flex items-center justify-between">
-        <button onClick={() => onNav("landing")} className="flex items-center gap-3 group">
+        <button onClick={scrollToTop} className="nav-link flex items-center gap-3 group">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)" }}>
             <span className="text-[#0F1115] font-bold text-sm orda-cinzel">O</span>
           </div>
@@ -422,17 +487,22 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
         <div className="hidden md:flex items-center gap-8">
           {inApp && navLinks.map(([label, target]) => (
             <button key={label} onClick={() => onNav(target)}
-              className="text-sm orda-cinzel tracking-widest transition-colors duration-200"
+              className="nav-link text-sm orda-cinzel tracking-widest transition-colors duration-200"
               style={{ color: view === target ? "#D4AF37" : "#B7BAC3" }}
               onMouseEnter={e => { if (view !== target) (e.target as HTMLElement).style.color = "#F6F4EC"; }}
               onMouseLeave={e => { if (view !== target) (e.target as HTMLElement).style.color = "#B7BAC3"; }}>
               {label}
             </button>
           ))}
-          {!inApp && [t("nav.journey"), t("nav.map"), t("nav.artifacts"), t("nav.aiHistorian"), t("nav.about")].map((label) => (
-            <button key={label}
-              className="text-sm orda-cinzel tracking-widest text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors">
+          {!inApp && sectionLinks.map(([label, id]) => (
+            <button key={id} onClick={() => goToSection(id)}
+              className="nav-link relative text-sm orda-cinzel tracking-widest transition-colors duration-200 pb-1"
+              style={{ color: activeSection === id ? "#D4AF37" : "#B7BAC3" }}
+              onMouseEnter={e => { if (activeSection !== id) (e.target as HTMLElement).style.color = "#F6F4EC"; }}
+              onMouseLeave={e => { if (activeSection !== id) (e.target as HTMLElement).style.color = "#B7BAC3"; }}>
               {label}
+              <span className="absolute left-0 right-0 -bottom-0.5 h-px rounded-full transition-all duration-300"
+                style={{ background: activeSection === id ? "#D4AF37" : "transparent", boxShadow: activeSection === id ? "0 0 8px rgba(212,175,55,0.6)" : "none" }} />
             </button>
           ))}
         </div>
@@ -456,7 +526,7 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
             <button
               onClick={() => onNav("passport")}
               title={user ? `${user.username} · ${t("nav.passport")}` : t("nav.passport")}
-              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold orda-cinzel overflow-hidden"
+              className="nav-link w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold orda-cinzel overflow-hidden"
               style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)", color: "#0F1115" }}>
               {user?.avatar_url ? (
                 <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -465,20 +535,32 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
               )}
             </button>
           ) : (
-            <button onClick={() => onNav("chars")} className="btn-primary text-sm py-2 px-5">
+            <button onClick={() => onNav("passport")} className="nav-link btn-primary text-sm py-2 px-5">
               {t("nav.enter")}
             </button>
           )}
-          <button className="md:hidden" onClick={() => setMenuOpen(!menuOpen)}>
+          <button className="nav-link md:hidden" aria-label={menuOpen ? t("nav.closeMenu") : t("nav.openMenu")} onClick={() => setMenuOpen(!menuOpen)}>
             <Menu size={20} color="#F6F4EC" />
           </button>
         </div>
       </div>
       {menuOpen && (
         <div className="md:hidden glass-dark border-t border-white/5 px-6 py-4 flex flex-col gap-4">
-          {[t("nav.journey"), t("nav.map"), t("nav.artifacts"), t("nav.aiHistorian")].map(label => (
-            <button key={label} className="text-sm orda-cinzel tracking-widest text-[#B7BAC3] text-left">{label}</button>
-          ))}
+          {inApp
+            ? navLinks.map(([label, target]) => (
+              <button key={label} className="nav-link text-sm orda-cinzel tracking-widest text-left"
+                style={{ color: view === target ? "#D4AF37" : "#B7BAC3" }}
+                onClick={() => { onNav(target); setMenuOpen(false); }}>
+                {label}
+              </button>
+            ))
+            : sectionLinks.map(([label, id]) => (
+              <button key={id} className="nav-link text-sm orda-cinzel tracking-widest text-left"
+                style={{ color: activeSection === id ? "#D4AF37" : "#B7BAC3" }}
+                onClick={() => goToSection(id)}>
+                {label}
+              </button>
+            ))}
           <LanguageSwitcher compact />
         </div>
       )}
@@ -600,12 +682,15 @@ function Landing({ onStart }: { onStart: () => void }) {
             <span>{t("hero.watchDemo")}</span>
           </button>
         </div>
-      </div>
 
-      {/* Scroll indicator */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 animate-scroll">
-        <span className="text-[#B7BAC3] text-xs tracking-[0.2em] orda-cinzel">{t("hero.scroll")}</span>
-        <ChevronDown size={16} color="#D4AF37" />
+        {/* Scroll hint */}
+        <button
+          onClick={() => smoothScrollToId("journey-section")}
+          aria-label={t("hero.scrollDown")}
+          className={`nav-link mt-14 flex items-center justify-center rounded-full transition-all duration-1000 delay-700 ${mounted ? "opacity-60 hover:opacity-100" : "opacity-0"}`}
+        >
+          <ChevronDown size={22} color="#D4AF37" className="animate-scroll" />
+        </button>
       </div>
 
       {/* Features strip */}
@@ -683,7 +768,7 @@ function JourneySection() {
     { icon: Zap, title: t("journey.pillars.quest.title"), text: t("journey.pillars.quest.text") },
   ];
   return (
-    <section ref={parallax.ref} className="relative py-28 md:py-36 overflow-hidden" style={{ background: "linear-gradient(180deg, #0F1115 0%, #12141B 100%)" }}>
+    <section id="journey-section" ref={parallax.ref} className="relative py-28 md:py-36 overflow-hidden scroll-mt-24" style={{ background: "linear-gradient(180deg, #0F1115 0%, #12141B 100%)" }}>
       <motion.div style={{ y: parallax.y }} className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(212,175,55,0.05) 0%, transparent 60%)" }} />
       </motion.div>
@@ -758,7 +843,7 @@ function MapPreviewSection({ onExplore }: { onExplore: () => void }) {
   const parallax = useParallaxY(40);
 
   return (
-    <section ref={parallax.ref} className="relative py-28 md:py-36 overflow-hidden" style={{ background: "linear-gradient(180deg, #0D0F15 0%, #12141B 100%)" }}>
+    <section id="map-section" ref={parallax.ref} className="relative py-28 md:py-36 overflow-hidden scroll-mt-24" style={{ background: "linear-gradient(180deg, #0D0F15 0%, #12141B 100%)" }}>
       <motion.div style={{ y: parallax.y }} className="absolute inset-0 pointer-events-none">
         <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 60%, rgba(212,175,55,0.04) 0%, transparent 65%)" }} />
       </motion.div>
@@ -828,7 +913,7 @@ function CitiesPreviewSection({ onExplore }: { onExplore: () => void }) {
 function AIHistorianPreviewSection({ onExplore }: { onExplore: () => void }) {
   const { t } = useTranslation();
   return (
-    <section className="relative py-28 md:py-36 overflow-hidden" style={{ background: "linear-gradient(180deg, #12141B 0%, #0F1115 100%)" }}>
+    <section id="ai-historian-section" className="relative py-28 md:py-36 overflow-hidden scroll-mt-24" style={{ background: "linear-gradient(180deg, #12141B 0%, #0F1115 100%)" }}>
       <div className="max-w-4xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
         <ScrollReveal>
           <div className="badge-teal mb-4 inline-block">{t("aiPreview.badge")}</div>
@@ -873,7 +958,7 @@ function ArtifactsPreviewSection({ onExplore }: { onExplore: () => void }) {
   const rarityIcons: Record<string, string> = { legendary: "⚜", rare: "🗿", common: "🪶" };
 
   return (
-    <section className="relative py-28 md:py-36" style={{ background: "#0F1115" }}>
+    <section id="artifacts-section" className="relative py-28 md:py-36 scroll-mt-24" style={{ background: "#0F1115" }}>
       <div className="max-w-6xl mx-auto px-6">
         <ScrollReveal className="text-center mb-14">
           <div className="badge-gold mb-4 inline-block">{t("artifactsPreview.badge")}</div>
@@ -984,7 +1069,7 @@ function LandingFooter() {
   const { t } = useTranslation();
   const links = [t("footer.links.journey"), t("footer.links.cities"), t("footer.links.aiHistorian"), t("footer.links.artifacts")];
   return (
-    <footer className="relative py-12 border-t" style={{ background: "#0A0C10", borderColor: "rgba(255,255,255,0.05)" }}>
+    <footer id="about-section" className="relative py-12 border-t scroll-mt-24" style={{ background: "#0A0C10", borderColor: "rgba(255,255,255,0.05)" }}>
       <div className="max-w-6xl mx-auto px-6">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
           <div className="flex items-center gap-3">

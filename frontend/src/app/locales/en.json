@@ -22,14 +22,16 @@
     "aiHistorian": "AI Historian",
     "about": "About",
     "enter": "Enter",
-    "passport": "Passport"
+    "passport": "Passport",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
   },
   "hero": {
     "tagline": "AI Historical Journey",
     "description": "Discover ancient cities, talk to an AI historian, complete interactive quests and become a true explorer of the Great Steppe.",
     "startJourney": "Start Journey",
     "watchDemo": "Watch Demo",
-    "scroll": "SCROLL",
+    "scrollDown": "Scroll down",
     "features": {
       "cities": "6 Cities",
       "quests": "200+ Quests",

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.models.certificate import Certificate
     from app.models.chat_history import ChatHistory
     from app.models.progress import Progress
+    from app.models.user_cosmetic import UserCosmetic
 
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -43,6 +44,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         default=Language.KAZAKH,
         nullable=False,
     )
+    equipped_frame: Mapped[str] = mapped_column(String(50), default="default", nullable=False)
 
     progress_records: Mapped[list["Progress"]] = relationship(
         "Progress", back_populates="user", cascade="all, delete-orphan"
@@ -55,4 +57,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     certificates: Mapped[list["Certificate"]] = relationship(
         "Certificate", back_populates="user", cascade="all, delete-orphan"
+    )
+    cosmetics: Mapped[list["UserCosmetic"]] = relationship(
+        "UserCosmetic", back_populates="user", cascade="all, delete-orphan"
     )

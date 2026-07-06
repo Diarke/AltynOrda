@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from app.constants import PLAYER_TITLES
+from app.constants import AVATAR_FRAME_CATALOG, PLAYER_TITLES
 from app.core.unit_of_work import UnitOfWork
 from app.enums import AchievementType, ProgressType, QuestStatus
 from app.exceptions import ConflictException, NotFoundException, ValidationException
@@ -11,9 +11,13 @@ from app.models.achievement import Achievement
 from app.models.progress import Progress
 from app.models.quest import Quest
 from app.models.user import User
+from app.models.user_cosmetic import UserCosmetic
 from app.schemas.progress import (
     AchievementResponse,
     CoinSpendResponse,
+    CosmeticActionResponse,
+    CosmeticCatalogResponse,
+    CosmeticItemResponse,
     DailyLoginResponse,
     LeaderboardEntry,
     LeaderboardResponse,
@@ -238,6 +242,68 @@ class ProgressService:
                 entries, key=lambda item: item.achievement_count, reverse=True
             )[:limit],
             streaks=sorted(entries, key=lambda item: item.streak_days, reverse=True)[:limit],
+        )
+
+    async def list_cosmetics(self, user: User) -> CosmeticCatalogResponse:
+        owned = await self._uow.user_cosmetics.get_by_user(user.id)
+        owned_keys = {item.item_key for item in owned} | {"default"}
+        language = user.language.value
+        items = [
+            CosmeticItemResponse(
+                key=frame.key,
+                name=frame.names.get(language, frame.names["en"]),
+                cost_coins=frame.cost_coins,
+                unlocked=frame.key in owned_keys,
+                equipped=frame.key == user.equipped_frame,
+            )
+            for frame in AVATAR_FRAME_CATALOG
+        ]
+        return CosmeticCatalogResponse(items=items)
+
+    async def unlock_cosmetic(self, user: User, item_key: str) -> CosmeticActionResponse:
+        frame = next((f for f in AVATAR_FRAME_CATALOG if f.key == item_key), None)
+        if frame is None:
+            raise NotFoundException("Cosmetic item not found")
+
+        existing = await self._uow.user_cosmetics.get_by_user_and_key(user.id, item_key)
+        if existing is not None:
+            raise ConflictException("Cosmetic item already unlocked")
+        if user.coins < frame.cost_coins:
+            raise ValidationException("Not enough coins")
+
+        user.coins -= frame.cost_coins
+        await self._uow.users.update(user)
+        await self._uow.user_cosmetics.create(
+            UserCosmetic(user_id=user.id, item_key=item_key, unlocked_at=datetime.now(UTC))
+        )
+        await self._uow.session.commit()
+
+        return CosmeticActionResponse(
+            success=True,
+            message=f"{frame.names.get(user.language.value, frame.names['en'])} unlocked",
+            equipped_frame=user.equipped_frame,
+            remaining_coins=user.coins,
+        )
+
+    async def equip_cosmetic(self, user: User, item_key: str) -> CosmeticActionResponse:
+        frame = next((f for f in AVATAR_FRAME_CATALOG if f.key == item_key), None)
+        if frame is None:
+            raise NotFoundException("Cosmetic item not found")
+
+        if item_key != "default":
+            owned = await self._uow.user_cosmetics.get_by_user_and_key(user.id, item_key)
+            if owned is None:
+                raise ValidationException("Cosmetic item is not unlocked yet")
+
+        user.equipped_frame = item_key
+        await self._uow.users.update(user)
+        await self._uow.session.commit()
+
+        return CosmeticActionResponse(
+            success=True,
+            message=f"{frame.names.get(user.language.value, frame.names['en'])} equipped",
+            equipped_frame=user.equipped_frame,
+            remaining_coins=user.coins,
         )
 
     async def _award_achievements(self, user: User) -> None:
