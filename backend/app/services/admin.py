@@ -302,6 +302,8 @@ class AdminService:
             is_active=user.is_active,
             bio=user.bio,
             avatar_url=user.avatar_url,
+            language=user.language,
+            created_at=user.created_at,
         )
 
     @staticmethod

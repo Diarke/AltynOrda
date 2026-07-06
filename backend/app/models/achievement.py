@@ -1,9 +1,10 @@
 """Achievement ORM model."""
 
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,5 +33,8 @@ class Achievement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     icon_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    reward_xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reward_coins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    achieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="achievements")

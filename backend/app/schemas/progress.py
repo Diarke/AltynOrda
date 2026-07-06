@@ -16,6 +16,8 @@ class ProgressResponse(BaseSchema):
     entity_id: uuid.UUID
     status: QuestStatus
     score: int
+    completed_at: datetime | None
+    cooldown_until: datetime | None
     notes: str | None
     created_at: datetime
     updated_at: datetime
@@ -40,3 +42,68 @@ class UserProgressSummary(BaseSchema):
     total_in_progress: int
     completion_percent: float
     records: list[ProgressResponse]
+
+
+class AchievementResponse(BaseSchema):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    achievement_type: str
+    title: str
+    description: str
+    icon_url: str | None
+    reward_xp: int
+    reward_coins: int
+    achieved_at: datetime | None
+
+
+class ProgressStatsResponse(BaseSchema):
+    user_id: uuid.UUID
+    level: int
+    title: str
+    xp: int
+    coins: int
+    streak_days: int
+    unlocks: dict[str, list[str]]
+
+
+class QuestCompletionResponse(BaseSchema):
+    success: bool
+    message: str
+    xp_gained: int
+    coins_gained: int
+    level: int
+    unlocks: dict[str, list[str]]
+
+
+class DailyLoginResponse(BaseSchema):
+    success: bool
+    message: str
+    streak_days: int
+    xp_gained: int
+    coins_gained: int
+    level: int
+    unlocks: dict[str, list[str]]
+
+
+class CoinSpendResponse(BaseSchema):
+    success: bool
+    message: str
+    coins_spent: int
+    remaining_coins: int
+
+
+class LeaderboardEntry(BaseSchema):
+    user_id: uuid.UUID
+    username: str
+    level: int
+    xp: int
+    coins: int
+    achievement_count: int
+    streak_days: int
+
+
+class LeaderboardResponse(BaseSchema):
+    xp: list[LeaderboardEntry]
+    coins: list[LeaderboardEntry]
+    achievements: list[LeaderboardEntry]
+    streaks: list[LeaderboardEntry]

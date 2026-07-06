@@ -66,6 +66,12 @@ API docs: http://localhost:8000/docs
 | POST | `/api/v1/chat` | AI historian chat (RAG) |
 | GET | `/api/v1/progress` | User progress |
 | POST | `/api/v1/progress` | Create progress |
+| GET | `/api/v1/progress/stats` | XP, coins, level, streak, and unlocks |
+| GET | `/api/v1/progress/achievements` | Achievements unlocked by the current user |
+| POST | `/api/v1/progress/quests/{id}/complete` | Complete a quest and receive XP/coin rewards |
+| POST | `/api/v1/progress/daily-login` | Claim the daily login streak reward |
+| POST | `/api/v1/progress/spend-coins` | Spend coins on a cosmetic/unlock |
+| GET | `/api/v1/progress/leaderboard` | Top players by XP, coins, streak, and achievements |
 | POST | `/api/v1/quiz` | Submit quiz |
 | POST | `/api/v1/certificates` | Issue certificate |
 

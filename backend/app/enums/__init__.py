@@ -28,9 +28,20 @@ class AchievementType(StrEnum):
     SCHOLAR = "scholar"
     COLLECTOR = "collector"
     COMPLETIONIST = "completionist"
+    HISTORIAN = "historian"
+    MERCHANT = "merchant"
+    ARCHAEOLOGIST = "archaeologist"
+    MASTER_OF_THE_STEPPE = "master_of_the_steppe"
+    AI_SCHOLAR = "ai_scholar"
 
 
 class DocumentSourceType(StrEnum):
     PRIMARY = "primary"
     SECONDARY = "secondary"
     ARCHAEOLOGICAL = "archaeological"
+
+
+class Language(StrEnum):
+    KAZAKH = "kk"
+    RUSSIAN = "ru"
+    ENGLISH = "en"

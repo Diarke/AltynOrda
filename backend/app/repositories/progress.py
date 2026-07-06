@@ -38,6 +38,15 @@ class ProgressRepository(BaseRepository[Progress]):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_user_and_entity_type(
+        self, user_id: uuid.UUID, entity_type: ProgressType
+    ) -> list[Progress]:
+        stmt = select(Progress).where(
+            Progress.user_id == user_id, Progress.entity_type == entity_type
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def count_completed_by_user(self, user_id: uuid.UUID) -> int:
         from sqlalchemy import func
 

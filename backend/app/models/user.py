@@ -1,12 +1,13 @@
 """User ORM model."""
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Enum, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.enums import UserRole
+from app.enums import Language, UserRole
 
 if TYPE_CHECKING:
     from app.models.achievement import Achievement
@@ -32,6 +33,16 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    coins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    streak_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    language: Mapped[Language] = mapped_column(
+        Enum(Language, name="user_language", native_enum=False),
+        default=Language.KAZAKH,
+        nullable=False,
+    )
 
     progress_records: Mapped[list["Progress"]] = relationship(
         "Progress", back_populates="user", cascade="all, delete-orphan"

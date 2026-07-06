@@ -26,3 +26,12 @@ class UserRepository(BaseRepository[User]):
     async def username_exists(self, username: str) -> bool:
         user = await self.get_by_username(username)
         return user is not None
+
+    async def get_leaderboard(self, *, limit: int = 10) -> list[User]:
+        stmt = (
+            select(User)
+            .order_by(User.xp.desc(), User.coins.desc(), User.streak_days.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
