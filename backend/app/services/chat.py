@@ -39,6 +39,7 @@ class ChatService:
             data.message,
             city_id=data.city_id,
             chat_history=history,
+            language=user.language,
         )
 
         await self._save_messages(user, data, response)

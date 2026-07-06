@@ -5,10 +5,12 @@ import logging
 from app.ai.client import GroqClient
 from app.ai.prompts import (
     HISTORIAN_SYSTEM_PROMPT,
-    INSUFFICIENT_CONTEXT_RESPONSE,
-    NO_CONTEXT_RESPONSE,
+    INSUFFICIENT_CONTEXT_RESPONSES,
+    LANGUAGE_NAMES,
+    NO_CONTEXT_RESPONSES,
 )
 from app.ai.schemas import AIChatMessage, AICompletionRequest, EmbeddingRequest
+from app.enums import Language
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +27,16 @@ class AIService:
         context_chunks: list[str],
         *,
         chat_history: list[AIChatMessage] | None = None,
+        language: Language = Language.ENGLISH,
     ) -> str:
         """Generate a historian response grounded in retrieved context."""
         if not context_chunks:
             logger.info("No context chunks available for RAG query")
-            return NO_CONTEXT_RESPONSE
+            return NO_CONTEXT_RESPONSES[language.value]
 
         context = "\n\n---\n\n".join(context_chunks)
-        system_prompt = HISTORIAN_SYSTEM_PROMPT.format(context=context)
+        language_name = LANGUAGE_NAMES[language.value]
+        system_prompt = HISTORIAN_SYSTEM_PROMPT.format(context=context, language_name=language_name)
 
         messages: list[AIChatMessage] = list(chat_history or [])
         messages.append(AIChatMessage(role="user", content=user_message))
@@ -56,5 +60,5 @@ class AIService:
         total_length = sum(len(c) for c in context_chunks)
         return total_length >= 100
 
-    def get_insufficient_context_message(self) -> str:
-        return INSUFFICIENT_CONTEXT_RESPONSE
+    def get_insufficient_context_message(self, language: Language = Language.ENGLISH) -> str:
+        return INSUFFICIENT_CONTEXT_RESPONSES[language.value]

@@ -6,6 +6,7 @@ import uuid
 from app.ai.schemas import AIChatMessage
 from app.ai.service import AIService
 from app.core.unit_of_work import UnitOfWork
+from app.enums import Language
 from app.rag.embeddings import EmbeddingService
 from app.rag.retriever import RAGRetriever
 from app.schemas.chat import ChatResponse
@@ -28,6 +29,7 @@ class RAGPipeline:
         *,
         city_id: uuid.UUID | None = None,
         chat_history: list[AIChatMessage] | None = None,
+        language: Language = Language.ENGLISH,
     ) -> ChatResponse:
         """Execute full RAG pipeline: retrieve → generate."""
         sources = await self._retriever.retrieve(user_message, city_id=city_id)
@@ -36,7 +38,7 @@ class RAGPipeline:
         sufficient = await self._ai.verify_context_sufficiency(context_chunks)
         if not sufficient:
             return ChatResponse(
-                answer=self._ai.get_insufficient_context_message(),
+                answer=self._ai.get_insufficient_context_message(language),
                 sources=sources,
                 verified=False,
             )
@@ -45,6 +47,7 @@ class RAGPipeline:
             user_message,
             context_chunks,
             chat_history=chat_history,
+            language=language,
         )
 
         return ChatResponse(

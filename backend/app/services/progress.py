@@ -88,7 +88,7 @@ class ProgressService:
         return ProgressStatsResponse(
             user_id=user.id,
             level=user.level,
-            title=self._get_title(user.level),
+            title=self._get_title(user.level, user.language.value),
             xp=user.xp,
             coins=user.coins,
             streak_days=user.streak_days,
@@ -321,9 +321,10 @@ class ProgressService:
         return 1 + (xp - 100) // 250 + (1 if xp >= 500 else 0)
 
     @staticmethod
-    def _get_title(level: int) -> str:
-        index = min(level, len(PLAYER_TITLES)) - 1
-        return PLAYER_TITLES[index]
+    def _get_title(level: int, language: str) -> str:
+        titles = PLAYER_TITLES.get(language, PLAYER_TITLES["en"])
+        index = min(level, len(titles)) - 1
+        return titles[index]
 
     @staticmethod
     def _get_unlocks(level: int) -> dict[str, list[str]]:
