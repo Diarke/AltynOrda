@@ -1,15 +1,47 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { motion, useInView, useScroll, useTransform } from "motion/react";
+import { useTranslation, type TFunction } from "react-i18next";
+import { DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, type SupportedLanguage } from "./lib/i18n";
+import {
+  useAuthSession,
+  useArtifacts,
+  useCertificates,
+  useChatMutation,
+  useCities,
+  useProgress,
+  useQuests,
+  type ApiArtifact,
+  type ApiCity,
+  type ApiLanguage,
+  type ApiProgressSummary,
+  type ApiQuest,
+} from "./lib/api";
 import {
   Map, Package, Award, MessageSquare, ChevronRight, Compass, ScrollText,
   ShoppingBag, Globe, Search, Settings, User, Bell, ArrowRight, Play,
   Mic, Send, X, Menu, ChevronDown, Shield, Crown, BookOpen, Clock,
   MapPin, Download, Share2, Check, ChevronLeft, Star, Eye, Mountain,
-  Volume2, Paperclip, TrendingUp, Lock, Wind, Zap, Feather
+  Volume2, Paperclip, TrendingUp, Wind, Zap, Feather, LogOut, Camera
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "landing" | "chars" | "intro" | "dashboard" | "city" | "ai" | "artifacts" | "quests" | "certificate";
+type View = "landing" | "chars" | "intro" | "auth" | "dashboard" | "city" | "ai" | "artifacts" | "quests" | "certificate" | "passport";
 type CharType = "merchant" | "diplomat" | "explorer";
+
+// ─── Route access control ──────────────────────────────────────────────────────
+// Protected: require an authenticated session. Guest-only: only for signed-out
+// visitors (e.g. redirect an already-logged-in user away from the auth screen).
+// Admin: reserved for admin-only views (none exist yet in this app).
+const PROTECTED_VIEWS: View[] = ["dashboard", "city", "ai", "artifacts", "quests", "certificate", "passport"];
+const GUEST_ONLY_VIEWS: View[] = ["auth"];
+const ADMIN_VIEWS: View[] = [];
+
+function resolveView(target: View, isAuthenticated: boolean, role: string | null): View {
+  if (PROTECTED_VIEWS.includes(target) && !isAuthenticated) return "auth";
+  if (GUEST_ONLY_VIEWS.includes(target) && isAuthenticated) return "dashboard";
+  if (ADMIN_VIEWS.includes(target) && role !== "admin") return "dashboard";
+  return target;
+}
 
 interface City {
   id: string; name: string; subtitle: string;
@@ -23,6 +55,79 @@ interface Artifact {
   id: string; name: string; category: string;
   description: string; found: string; city: string; icon: string;
   rarity: "common" | "rare" | "legendary";
+}
+
+const CITY_SLUGS: Record<string, string> = {
+  "Sarai Batu": "sarai-batu",
+  "Sarayshyk": "sarayshyk",
+  "Otrar": "otrar",
+  "Sygnak": "sygnak",
+  "Bolgar": "bolgar",
+  "Kaffa": "kaffa",
+};
+
+const CITY_LAYOUTS: Record<string, { cx: number; cy: number; color: string; size: number }> = {
+  "sarai-batu": { cx: 370, cy: 295, color: "#D4AF37", size: 10 },
+  "sarayshyk": { cx: 490, cy: 295, color: "#C9962C", size: 7 },
+  "otrar": { cx: 730, cy: 415, color: "#C9962C", size: 7 },
+  "sygnak": { cx: 630, cy: 415, color: "#B7BAC3", size: 6 },
+  "bolgar": { cx: 418, cy: 105, color: "#B7BAC3", size: 6 },
+  "kaffa": { cx: 92, cy: 335, color: "#B7BAC3", size: 6 },
+};
+
+function mapApiCity(city: ApiCity, t: TFunction): City {
+  const slug = CITY_SLUGS[city.name];
+  const layout = (slug && CITY_LAYOUTS[slug]) || { cx: 360, cy: 260, color: "#B7BAC3", size: 6 };
+  const subtitle = slug ? t(`map.citySubtitles.${slug}`) : city.historical_period;
+
+  return {
+    id: city.id,
+    name: city.name,
+    subtitle,
+    cx: layout.cx,
+    cy: layout.cy,
+    description: city.description,
+    founded: city.historical_period,
+    population: city.population_estimate || t("common.unknown"),
+    facts: [city.significance || city.description, city.historical_period],
+    importance: city.significance || city.description,
+    color: layout.color,
+    size: layout.size,
+  };
+}
+
+function mapApiArtifact(artifact: ApiArtifact, cityName: string, t: TFunction): Artifact {
+  const rarity = (artifact.rarity?.toLowerCase() as Artifact["rarity"]) || "common";
+  const icons: Record<Artifact["rarity"], string> = {
+    legendary: "⚜",
+    rare: "🗿",
+    common: "🪶",
+  };
+
+  return {
+    id: artifact.id,
+    name: artifact.name,
+    category: artifact.era || t("common.historicalCategory"),
+    description: artifact.description,
+    found: artifact.historical_context || t("common.recoveredInField"),
+    city: cityName,
+    icon: icons[rarity],
+    rarity,
+  };
+}
+
+function mapApiQuest(quest: ApiQuest, cityName: string) {
+  return {
+    id: quest.id,
+    title: quest.title,
+    city: cityName,
+    xp: quest.xp_reward,
+    description: quest.description,
+  };
+}
+
+function countCompletedByType(records: ApiProgressSummary["records"] | undefined, entityType: string) {
+  return (records || []).filter((r) => r.entity_type === entityType && r.status === "completed").length;
 }
 
 // ─── Global Styles ────────────────────────────────────────────────────────────
@@ -158,112 +263,44 @@ const GLOBAL_CSS = `
   .map-territory { filter:url(#parchment-filter); }
 
   .notification-dot { width:8px;height:8px;background:#57D6D1;border-radius:50%;position:absolute;top:-2px;right:-2px;border:2px solid #0F1115; }
+
+  /* FIX: конфетти не анимировалось — класс существовал в JSX, но не был описан в CSS */
+  .confetti-piece { animation: confetti-fall linear forwards; }
 `;
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
-const CITIES: City[] = [
-  {
-    id: "sarai-batu", name: "Sarai Batu", subtitle: "Capital of the Golden Horde",
-    cx: 370, cy: 295, color: "#D4AF37", size: 10,
-    description: "Founded by Batu Khan in 1254, Sarai Batu stood on the west bank of the Akhtuba arm of the Volga River. At its zenith it housed over 600,000 souls — merchants from Venice, scholars from Persia, artisans from China — all sheltered beneath the banners of the Khan.",
-    founded: "1254 CE", population: "600,000+",
-    facts: ["Largest city in 13th-century Europe", "Home to 13 mosques and a Christian diocese", "Visited by Franciscan friar William of Rubruck", "Produced the finest cobalt-blue ceramics of the era"],
-    importance: "The beating heart of the Golden Horde — political, economic, and cultural nexus of the Great Steppe."
-  },
-  {
-    id: "sarayshyk", name: "Sarayshyk", subtitle: "Gateway to Central Asia",
-    cx: 490, cy: 295, color: "#C9962C", size: 7,
-    description: "Positioned at the bend of the Ural (Yaik) River, Sarayshyk commanded the overland trade route between the Caspian and the steppes. Caravans laden with silk, spices, and furs paused here to rest and pay tribute before continuing east.",
-    founded: "1220s CE", population: "80,000+",
-    facts: ["Burial place of seven Golden Horde Khans", "Major waystation on the Silk Road", "Famous for its silk workshops and goldsmiths"],
-    importance: "The eastern gateway — where Central Asian and Steppe cultures fused into the unique Golden Horde civilization."
-  },
-  {
-    id: "otrar", name: "Otrar", subtitle: "City That Changed History",
-    cx: 730, cy: 415, color: "#C9962C", size: 7,
-    description: "Otrar's governor Inalchuq ignited the Mongol conquest by massacring Genghis Khan's 500-man trade mission in 1218. The city paid dearly — a six-month siege, then complete destruction. Rebuilt under the Golden Horde, it rose again as a major Silk Road waystation.",
-    founded: "4th century CE", population: "120,000+",
-    facts: ["Incident here sparked the Mongol invasion of the Islamic world", "Birthplace of philosopher Al-Farabi", "Site of Timur's death in 1405", "Extensive library rivalling those of Baghdad"],
-    importance: "The crossroads of destiny — where a single act of greed redirected the course of world history."
-  },
-  {
-    id: "sygnak", name: "Sygnak", subtitle: "Throne of the White Horde",
-    cx: 630, cy: 415, color: "#B7BAC3", size: 6,
-    description: "Sygnak served as the capital of the White Horde — the eastern wing of the Golden Horde empire. Perched above the Syr Darya, its blue-tiled minarets gleamed across the steppe and its bazaars hummed with the trade of two continents.",
-    founded: "9th century CE", population: "50,000+",
-    facts: ["Capital of the Ak Orda (White Horde)", "Major center of Sufi scholarship", "Crossroads of nomadic and sedentary cultures"],
-    importance: "The eastern throne — center of the Jochid dynasty's dominion over the steppes of modern Kazakhstan."
-  },
-  {
-    id: "bolgar", name: "Bolgar", subtitle: "Northern Jewel of the Horde",
-    cx: 418, cy: 105, color: "#B7BAC3", size: 6,
-    description: "The ancient Volga Bulgarian city of Bolgar became a major northern hub of the Golden Horde, famous for its fur trade, honey, and amber. Its massive caravanserai welcomed merchants from Scandinavia, Russia, and Persia alike.",
-    founded: "7th century CE", population: "70,000+",
-    facts: ["Where Islam first came to the Volga region in 922 CE", "Major source of northern furs for the Mediterranean", "UNESCO World Heritage Site"],
-    importance: "The northern anchor — bridging the Horde's steppe world with the forests and kingdoms of medieval Russia and Scandinavia."
-  },
-  {
-    id: "kaffa", name: "Kaffa", subtitle: "Pearl of the Black Sea",
-    cx: 92, cy: 335, color: "#B7BAC3", size: 6,
-    description: "The Crimean port city of Kaffa was the Golden Horde's window to the Mediterranean world. A Genoese colony under Mongol suzerainty, its harbour bristled with the masts of a thousand ships carrying silk east and furs west.",
-    founded: "6th century BCE", population: "80,000+",
-    facts: ["The Black Death likely entered Europe via Kaffa in 1347", "Genoese colony paying tribute to the Khan", "Largest slave market north of the Caucasus"],
-    importance: "The gateway to Europe — where the wealth of the Golden Horde flowed into the veins of Mediterranean commerce."
-  },
-];
-
-const ARTIFACTS: Artifact[] = [
-  { id: "a1", name: "Khan's Golden Jug", category: "Vessels", description: "A ceremonial ewer of hammered gold adorned with turquoise inlay, used at the court of Özbeg Khan. The intertwining dragon motifs reflect the fusion of Chinese and Persian artistic traditions.", found: "Sarai Batu, 1961", city: "Sarai Batu", icon: "🏺", rarity: "legendary" },
-  { id: "a2", name: "Silk Road Dirham", category: "Coins", description: "Silver dirham minted at Sarai under the reign of Berke Khan (1257–1267), the first Mongol ruler to convert to Islam. Arabic inscriptions praise Allah and name the mint city.", found: "Sarayshyk, 1973", city: "Sarayshyk", icon: "🪙", rarity: "common" },
-  { id: "a3", name: "Warrior's Sabre", category: "Weapons", description: "A curved steel sabre of Mongolian manufacture, its crossguard decorated with silver knotwork. The blade bears a Persian inscription: 'In the name of God, the Victorious.'", found: "Bolgar, 1955", city: "Bolgar", icon: "⚔️", rarity: "rare" },
-  { id: "a4", name: "Steppe Emerald Necklace", category: "Jewelry", description: "Forty-three Colombian emeralds set in granulated gold, traded across three continents before resting around the neck of a Golden Horde noblewoman. A testament to global trade in the 14th century.", found: "Crimea, 1947", city: "Kaffa", icon: "💎", rarity: "legendary" },
-  { id: "a5", name: "Parchment Map of Sarai", category: "Maps", description: "A fragment of a city plan drawn by an unknown Genoese cartographer circa 1330 CE, showing streets, mosques, and the Khan's palace complex in Sarai Batu. One of only three such maps known to exist.", found: "Venice archives, 1882", city: "Sarai Batu", icon: "🗺️", rarity: "legendary" },
-  { id: "a6", name: "Khan's Diplomatic Letter", category: "Documents", description: "A 1263 CE letter from Khan Berke to French King Louis IX, proposing a military alliance against the Ilkhanate. Written in Arabic on thick Egyptian papyrus, sealed with the Golden Horde tamga.", found: "Paris, Bibliothèque nationale", city: "Sarai Batu", icon: "📜", rarity: "rare" },
-  { id: "a7", name: "Blue Ceramic Bowl", category: "Vessels", description: "Cobalt-glazed ceramic bowl from a Sarai workshop, circa 1320 CE. The swirling arabesque patterns in deep blue and white reflect the height of Golden Horde artistic achievement.", found: "Sarai Batu, 1958", city: "Sarai Batu", icon: "🫙", rarity: "common" },
-  { id: "a8", name: "Bronze Inkwell", category: "Tools", description: "A scholar's inkwell cast in intricate bronze, found in the ruins of Otrar's famous library. The geometric patterns are typical of 13th-century Islamic metalwork from the Syr Darya region.", found: "Otrar, 1978", city: "Otrar", icon: "🖋️", rarity: "rare" },
-];
-
-const CHARACTER_DATA = {
-  merchant: {
-    name: "The Merchant",
-    title: "Ibn Battuta's Companion",
-    description: "Travel the legendary Silk Road. Negotiate in the bazaars of Sarai, forge trade alliances, and amass a fortune that spans three continents.",
-    icon: ShoppingBag, traits: ["Resourceful", "Multilingual", "Cunning"],
-    color: "#D4AF37",
-  },
-  diplomat: {
-    name: "The Diplomat",
-    title: "Voice of the Khan",
-    description: "Navigate the treacherous courts of kings and khans. Craft alliances, decode politics, and shape the destiny of an empire through words, not swords.",
-    icon: ScrollText, traits: ["Eloquent", "Strategic", "Patient"],
-    color: "#57D6D1",
-  },
-  explorer: {
-    name: "The Explorer",
-    title: "Seeker of Lost Cities",
-    description: "Venture into the unknown. Unearth forgotten ruins, decode ancient scripts, and piece together the true story of the world's greatest steppe empire.",
-    icon: Compass, traits: ["Daring", "Perceptive", "Scholarly"],
-    color: "#6FCF97",
-  },
-};
-
-const AI_RESPONSES: Record<string, string[]> = {
-  default: [
-    "The Golden Horde — known as Altan Orda in Mongolian, Altyn Orda in Kazakh — was not merely a conquest state. At its peak under Özbeg Khan (1313–1341), it was a sophisticated multicultural empire where Muslim scholars, Christian missionaries, Buddhist monks, and Shamanist priests all coexisted beneath one banner.",
-    "Consider this: when Marco Polo traveled east in the 1270s, Kublai Khan's realm was famous in Europe. Yet the Golden Horde — equally vast, arguably more cosmopolitan — remained poorly understood in Western historiography for centuries. We are only now beginning to appreciate its true complexity.",
-    "The Silk Road under Golden Horde protection was arguably the most active it had ever been. The Pax Mongolica — Mongol Peace — allowed a merchant to travel from the Black Sea to China without fear of bandits. This is what enabled the Renaissance's influx of goods, ideas, and diseases.",
-    "Sarai Batu's population at its height exceeded that of contemporary London, Paris, or Rome. Yet while European cities are remembered in every history book, Sarai — buried beneath the Volga floodplain — was forgotten for centuries. It is archaeology, not chronicle, that is restoring its memory.",
-  ],
-  greeting: [
-    "As-salamu alaykum, traveler. I am ORDA, your guide through the ages of the Great Steppe. Ask me of khans and caravans, of golden cities and forgotten battles — I am here to illuminate the past with the light of knowledge.",
-  ],
-};
-
-const QUESTS = [
-  { id: "q1", title: "The Silk Route", city: "Sarai Batu", xp: 150, description: "A Byzantine merchant offers you a deal: half his silk for safe passage through Mongol territory. Do you accept and risk the Khan's displeasure, or decline and lose the profit?" },
-  { id: "q2", title: "The Khan's Audience", city: "Sarai Batu", xp: 200, description: "Özbeg Khan grants you an audience. He asks your opinion on converting the Horde to Islam. Your answer will shape the empire's future." },
-  { id: "q3", title: "The Lost Caravan", city: "Sarayshyk", xp: 120, description: "A caravan of 80 merchants has vanished between Sarayshyk and Otrar. The route crosses territory claimed by rival clans. You must find them." },
-];
+function getCharacterData(t: TFunction) {
+  return {
+    merchant: {
+      name: t("chars.merchant.name"),
+      shortName: t("chars.merchant.shortName"),
+      title: t("chars.merchant.title"),
+      description: t("chars.merchant.description"),
+      icon: ShoppingBag,
+      traits: t("chars.merchant.traits", { returnObjects: true }) as string[],
+      color: "#D4AF37",
+    },
+    diplomat: {
+      name: t("chars.diplomat.name"),
+      shortName: t("chars.diplomat.shortName"),
+      title: t("chars.diplomat.title"),
+      description: t("chars.diplomat.description"),
+      icon: ScrollText,
+      traits: t("chars.diplomat.traits", { returnObjects: true }) as string[],
+      color: "#57D6D1",
+    },
+    explorer: {
+      name: t("chars.explorer.name"),
+      shortName: t("chars.explorer.shortName"),
+      title: t("chars.explorer.title"),
+      description: t("chars.explorer.description"),
+      icon: Compass,
+      traits: t("chars.explorer.traits", { returnObjects: true }) as string[],
+      color: "#6FCF97",
+    },
+  };
+}
+type CharacterData = ReturnType<typeof getCharacterData>;
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 function DustParticles() {
@@ -298,7 +335,12 @@ function DustParticles() {
 }
 
 function RarityBadge({ rarity }: { rarity: Artifact["rarity"] }) {
-  const map = { legendary: ["#D4AF37", "LEGENDARY"], rare: ["#57D6D1", "RARE"], common: ["#B7BAC3", "COMMON"] };
+  const { t } = useTranslation();
+  const map = {
+    legendary: ["#D4AF37", t("common.rarity.legendary")],
+    rare: ["#57D6D1", t("common.rarity.rare")],
+    common: ["#B7BAC3", t("common.rarity.common")],
+  };
   const [color, label] = map[rarity];
   return (
     <span style={{ color, borderColor: color + "40", background: color + "15" }}
@@ -322,9 +364,38 @@ function ProgressRing({ value, size = 64, stroke = 5 }: { value: number; size?: 
 }
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
+function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
+  const { i18n } = useTranslation();
+  const { user, updateProfileMutation } = useAuthSession();
+  const active = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as SupportedLanguage;
+
+  const changeLanguage = (lng: SupportedLanguage) => {
+    i18n.changeLanguage(lng);
+    if (user) updateProfileMutation.mutate({ language: lng });
+  };
+
+  return (
+    <div className={`flex items-center gap-1 ${compact ? "" : "rounded-full"}`}
+      style={compact ? {} : { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", padding: "3px" }}>
+      {SUPPORTED_LANGUAGES.map((lng) => (
+        <button key={lng} onClick={() => changeLanguage(lng)}
+          className="px-2 py-1 rounded-full text-[10px] font-semibold orda-cinzel tracking-wider transition-colors"
+          style={{
+            background: active === lng ? "rgba(212,175,55,0.15)" : "transparent",
+            color: active === lng ? "#D4AF37" : "#B7BAC3",
+          }}>
+          {lng.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
+  const { t } = useTranslation();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { user } = useAuthSession();
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 20);
@@ -332,7 +403,10 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
     return () => window.removeEventListener("scroll", h);
   }, []);
 
-  const inApp = ["dashboard", "city", "ai", "artifacts", "quests", "certificate"].includes(view);
+  const inApp = ["dashboard", "city", "ai", "artifacts", "quests", "certificate", "passport"].includes(view);
+  const navLinks: [string, View][] = [
+    [t("nav.journey"), "dashboard"], [t("nav.map"), "dashboard"], [t("nav.artifacts"), "artifacts"], [t("nav.aiHistorian"), "ai"],
+  ];
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 transition-all duration-500"
@@ -346,10 +420,8 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
         </button>
 
         <div className="hidden md:flex items-center gap-8">
-          {inApp && [
-            ["Journey", "dashboard"], ["Map", "dashboard"], ["Artifacts", "artifacts"], ["AI Historian", "ai"],
-          ].map(([label, target]) => (
-            <button key={label} onClick={() => onNav(target as View)}
+          {inApp && navLinks.map(([label, target]) => (
+            <button key={label} onClick={() => onNav(target)}
               className="text-sm orda-cinzel tracking-widest transition-colors duration-200"
               style={{ color: view === target ? "#D4AF37" : "#B7BAC3" }}
               onMouseEnter={e => { if (view !== target) (e.target as HTMLElement).style.color = "#F6F4EC"; }}
@@ -357,7 +429,7 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
               {label}
             </button>
           ))}
-          {!inApp && ["Journey", "Map", "Artifacts", "AI Historian", "About"].map((label) => (
+          {!inApp && [t("nav.journey"), t("nav.map"), t("nav.artifacts"), t("nav.aiHistorian"), t("nav.about")].map((label) => (
             <button key={label}
               className="text-sm orda-cinzel tracking-widest text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors">
               {label}
@@ -366,6 +438,7 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
         </div>
 
         <div className="flex items-center gap-3">
+          <LanguageSwitcher />
           {inApp && (
             <>
               <button className="w-9 h-9 rounded-full flex items-center justify-center transition-colors"
@@ -380,13 +453,20 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
             </>
           )}
           {inApp ? (
-            <button className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold orda-cinzel"
+            <button
+              onClick={() => onNav("passport")}
+              title={user ? `${user.username} · ${t("nav.passport")}` : t("nav.passport")}
+              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold orda-cinzel overflow-hidden"
               style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)", color: "#0F1115" }}>
-              E
+              {user?.avatar_url ? (
+                <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                (user?.username?.[0] || "?").toUpperCase()
+              )}
             </button>
           ) : (
             <button onClick={() => onNav("chars")} className="btn-primary text-sm py-2 px-5">
-              Enter
+              {t("nav.enter")}
             </button>
           )}
           <button className="md:hidden" onClick={() => setMenuOpen(!menuOpen)}>
@@ -396,9 +476,10 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
       </div>
       {menuOpen && (
         <div className="md:hidden glass-dark border-t border-white/5 px-6 py-4 flex flex-col gap-4">
-          {["Journey", "Map", "Artifacts", "AI Historian"].map(label => (
+          {[t("nav.journey"), t("nav.map"), t("nav.artifacts"), t("nav.aiHistorian")].map(label => (
             <button key={label} className="text-sm orda-cinzel tracking-widest text-[#B7BAC3] text-left">{label}</button>
           ))}
+          <LanguageSwitcher compact />
         </div>
       )}
     </nav>
@@ -407,8 +488,9 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
 
 // ─── LANDING PAGE ─────────────────────────────────────────────────────────────
 function Landing({ onStart }: { onStart: () => void }) {
+  const { t } = useTranslation();
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setMounted(true), 100); return () => clearTimeout(t); }, []);
+  useEffect(() => { const timer = setTimeout(() => setMounted(true), 100); return () => clearTimeout(timer); }, []);
 
   return (
     <div className="relative w-full min-h-screen overflow-hidden flex flex-col">
@@ -491,7 +573,7 @@ function Landing({ onStart }: { onStart: () => void }) {
             ORDA
           </div>
           <div className="text-[#B7BAC3] text-xs md:text-sm tracking-[0.35em] orda-cinzel uppercase mb-10">
-            AI Historical Journey
+            {t("hero.tagline")}
           </div>
         </div>
 
@@ -504,32 +586,32 @@ function Landing({ onStart }: { onStart: () => void }) {
 
         {/* Description */}
         <p className={`text-[#B7BAC3] text-base md:text-lg max-w-lg leading-relaxed orda-inter mb-12 transition-all duration-1000 delay-300 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
-          Discover ancient cities, talk to an AI historian, complete interactive quests and become a true explorer of the Great Steppe.
+          {t("hero.description")}
         </p>
 
         {/* CTA Buttons */}
         <div className={`flex flex-col sm:flex-row gap-4 transition-all duration-1000 delay-500 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
           <button onClick={onStart} className="btn-primary text-base px-10 py-4 flex items-center gap-3">
-            <span>Start Journey</span>
+            <span>{t("hero.startJourney")}</span>
             <ArrowRight size={18} />
           </button>
           <button className="btn-ghost text-base px-10 py-4 flex items-center gap-3">
             <Play size={16} />
-            <span>Watch Demo</span>
+            <span>{t("hero.watchDemo")}</span>
           </button>
         </div>
       </div>
 
       {/* Scroll indicator */}
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 animate-scroll">
-        <span className="text-[#B7BAC3] text-xs tracking-[0.2em] orda-cinzel">SCROLL</span>
+        <span className="text-[#B7BAC3] text-xs tracking-[0.2em] orda-cinzel">{t("hero.scroll")}</span>
         <ChevronDown size={16} color="#D4AF37" />
       </div>
 
       {/* Features strip */}
       <div className="absolute bottom-0 left-0 right-0 h-16 flex items-center justify-center gap-12 border-t"
         style={{ borderColor: "rgba(255,255,255,0.04)", background: "rgba(15,17,21,0.7)", backdropFilter: "blur(20px)" }}>
-        {[["6 Cities", MapPin], ["200+ Quests", Zap], ["AI Historian", MessageSquare], ["3D Artifacts", Package]].map(([label, Icon]) => (
+        {[[t("hero.features.cities"), MapPin], [t("hero.features.quests"), Zap], [t("hero.features.aiHistorian"), MessageSquare], [t("hero.features.artifacts"), Package]].map(([label, Icon]) => (
           <div key={label as string} className="flex items-center gap-2 text-[#B7BAC3] text-sm orda-inter">
             <Icon size={14} color="#D4AF37" />
             <span>{label as string}</span>
@@ -540,24 +622,429 @@ function Landing({ onStart }: { onStart: () => void }) {
   );
 }
 
+// ─── LANDING STORY (extends the Hero below) ───────────────────────────────────
+function ScrollReveal({ children, delay = 0, className = "" }: { children: ReactNode; delay?: number; className?: string }) {
+  return (
+    <motion.div
+      className={className}
+      initial={{ opacity: 0, y: 40 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function useParallaxY(distance = 50) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "end start"] });
+  const y = useTransform(scrollYProgress, [0, 1], [distance, -distance]);
+  return { ref, y };
+}
+
+function useCountUp(target: number, shouldStart: boolean, duration = 1400) {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    if (!shouldStart) return;
+    let raf: number;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const progress = Math.min((now - start) / duration, 1);
+      setValue(Math.round(target * (1 - Math.pow(1 - progress, 3))));
+      if (progress < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [shouldStart, target, duration]);
+  return value;
+}
+
+function StatCounter({ value, label }: { value: number; label: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-60px" });
+  const count = useCountUp(value, inView);
+  return (
+    <div ref={ref} className="text-center">
+      <div className="text-4xl md:text-5xl font-black orda-cinzel text-[#D4AF37]">{count}+</div>
+      <div className="text-xs md:text-sm orda-inter text-[#B7BAC3] mt-2 tracking-wide">{label}</div>
+    </div>
+  );
+}
+
+
+function JourneySection() {
+  const { t } = useTranslation();
+  const parallax = useParallaxY(50);
+  const pillars = [
+    { icon: Compass, title: t("journey.pillars.explore.title"), text: t("journey.pillars.explore.text") },
+    { icon: MessageSquare, title: t("journey.pillars.converse.title"), text: t("journey.pillars.converse.text") },
+    { icon: Zap, title: t("journey.pillars.quest.title"), text: t("journey.pillars.quest.text") },
+  ];
+  return (
+    <section ref={parallax.ref} className="relative py-28 md:py-36 overflow-hidden" style={{ background: "linear-gradient(180deg, #0F1115 0%, #12141B 100%)" }}>
+      <motion.div style={{ y: parallax.y }} className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(212,175,55,0.05) 0%, transparent 60%)" }} />
+      </motion.div>
+      <DustParticles />
+      <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
+        <ScrollReveal>
+          <div className="badge-gold mb-6 inline-block">{t("journey.badge")}</div>
+          <h2 className="orda-cinzel text-3xl md:text-5xl font-bold text-[#F6F4EC] mb-6 leading-tight">
+            {t("journey.title1")}<br />{t("journey.title2")}
+          </h2>
+          <p className="orda-cormorant text-xl md:text-2xl italic text-[#B7BAC3] max-w-2xl mx-auto leading-relaxed">
+            {t("journey.description")}
+          </p>
+        </ScrollReveal>
+        <ScrollReveal delay={0.15} className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-16">
+          {pillars.map((item) => (
+            <div key={item.title} className="rounded-[20px] p-7 card-hover gold-hover" style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 mx-auto" style={{ background: "rgba(212,175,55,0.1)", border: "1px solid rgba(212,175,55,0.2)" }}>
+                <item.icon size={20} color="#D4AF37" />
+              </div>
+              <h3 className="orda-cinzel text-base font-semibold text-[#F6F4EC] mb-2">{item.title}</h3>
+              <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed">{item.text}</p>
+            </div>
+          ))}
+        </ScrollReveal>
+      </div>
+    </section>
+  );
+}
+
+function TimelineSection() {
+  const { t } = useTranslation();
+  const events = t("timeline.events", { returnObjects: true }) as { year: string; text: string }[];
+  return (
+    <section className="relative py-28 md:py-36" style={{ background: "#0D0F15" }}>
+      <div className="max-w-3xl mx-auto px-6">
+        <ScrollReveal className="text-center mb-16">
+          <div className="badge-gold mb-4 inline-block">{t("timeline.badge")}</div>
+          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC]">{t("timeline.title")}</h2>
+        </ScrollReveal>
+        <div className="relative">
+          <div className="absolute left-[84px] top-0 bottom-0 w-px hidden sm:block"
+            style={{ background: "linear-gradient(180deg, transparent, rgba(212,175,55,0.3) 8%, rgba(212,175,55,0.3) 92%, transparent)" }} />
+          <div className="space-y-8">
+            {events.map((item, i) => (
+              <ScrollReveal key={item.year} delay={i * 0.05}>
+                <div className="flex items-start gap-6">
+                  <div className="w-20 flex-shrink-0 text-right pt-4 hidden sm:block">
+                    <span className="orda-cinzel text-sm font-semibold text-[#D4AF37]">{item.year}</span>
+                  </div>
+                  <div className="relative flex-shrink-0 hidden sm:block pt-5">
+                    <div className="w-3 h-3 rounded-full border-2 border-[#D4AF37]" style={{ background: "#0D0F15", boxShadow: "0 0 10px rgba(212,175,55,0.4)" }} />
+                  </div>
+                  <div className="flex-1 rounded-[16px] p-5" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div className="sm:hidden orda-cinzel text-sm font-semibold text-[#D4AF37] mb-1">{item.year}</div>
+                    <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed">{item.text}</p>
+                  </div>
+                </div>
+              </ScrollReveal>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MapPreviewSection({ onExplore }: { onExplore: () => void }) {
+  const { t } = useTranslation();
+  const { data: citiesData, isLoading } = useCities();
+  const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
+  const parallax = useParallaxY(40);
+
+  return (
+    <section ref={parallax.ref} className="relative py-28 md:py-36 overflow-hidden" style={{ background: "linear-gradient(180deg, #0D0F15 0%, #12141B 100%)" }}>
+      <motion.div style={{ y: parallax.y }} className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 60%, rgba(212,175,55,0.04) 0%, transparent 65%)" }} />
+      </motion.div>
+      <div className="relative z-10 max-w-5xl mx-auto px-6">
+        <ScrollReveal className="text-center mb-12">
+          <div className="badge-gold mb-4 inline-block">{t("mapPreview.badge")}</div>
+          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC] mb-4">{t("mapPreview.title")}</h2>
+          <p className="orda-inter text-[#B7BAC3] max-w-xl mx-auto">
+            {t("mapPreview.description")}
+          </p>
+        </ScrollReveal>
+        <ScrollReveal delay={0.15}>
+          <div className="rounded-[24px] p-3 md:p-5" style={{ background: "rgba(23,26,32,0.6)", border: "1px solid rgba(212,175,55,0.12)" }}>
+            <div className="h-[380px] md:h-[460px]">
+              {isLoading ? (
+                <div className="w-full h-full rounded-[16px]" style={{ background: "rgba(255,255,255,0.03)" }} />
+              ) : (
+                <InteractiveMap cities={cities} onSelectCity={onExplore} />
+              )}
+            </div>
+          </div>
+        </ScrollReveal>
+      </div>
+    </section>
+  );
+}
+
+function CitiesPreviewSection({ onExplore }: { onExplore: () => void }) {
+  const { t } = useTranslation();
+  const { data: citiesData, isLoading } = useCities();
+  const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
+  const items: (City | null)[] = isLoading ? Array.from({ length: 6 }, () => null) : cities;
+
+  return (
+    <section className="relative py-28 md:py-36" style={{ background: "#12141B" }}>
+      <div className="max-w-6xl mx-auto px-6">
+        <ScrollReveal className="text-center mb-14">
+          <div className="badge-gold mb-4 inline-block">{t("citiesPreview.badge")}</div>
+          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC]">{t("citiesPreview.title")}</h2>
+        </ScrollReveal>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {items.map((city, i) => (
+            <ScrollReveal key={city?.id ?? `city-skeleton-${i}`} delay={i * 0.06}>
+              {!city ? (
+                <div className="rounded-[20px] h-40" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }} />
+              ) : (
+                <div onClick={onExplore} className="rounded-[20px] p-6 cursor-pointer card-hover gold-hover h-40 flex flex-col justify-between"
+                  style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div>
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-3" style={{ background: "rgba(212,175,55,0.1)", border: `1px solid ${city.color}40` }}>
+                      <MapPin size={15} color={city.color} />
+                    </div>
+                    <h3 className="orda-cinzel text-base font-semibold text-[#F6F4EC]">{city.name}</h3>
+                    <p className="orda-inter text-xs text-[#B7BAC3] mt-1">{city.subtitle}</p>
+                  </div>
+                  <span className="text-[10px] orda-cinzel tracking-widest text-[#D4AF37]">{city.founded}</span>
+                </div>
+              )}
+            </ScrollReveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AIHistorianPreviewSection({ onExplore }: { onExplore: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <section className="relative py-28 md:py-36 overflow-hidden" style={{ background: "linear-gradient(180deg, #12141B 0%, #0F1115 100%)" }}>
+      <div className="max-w-4xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+        <ScrollReveal>
+          <div className="badge-teal mb-4 inline-block">{t("aiPreview.badge")}</div>
+          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC] mb-5">{t("aiPreview.title")}</h2>
+          <p className="orda-inter text-[#B7BAC3] leading-relaxed mb-6">
+            {t("aiPreview.description")}
+          </p>
+          <button onClick={onExplore} className="btn-teal flex items-center gap-2">
+            <MessageSquare size={16} /> {t("aiPreview.cta")}
+          </button>
+        </ScrollReveal>
+        <ScrollReveal delay={0.15}>
+          <div className="rounded-[20px] p-6 space-y-4" style={{ background: "rgba(23,26,32,0.8)", border: "1px solid rgba(87,214,209,0.15)" }}>
+            <div className="flex justify-end">
+              <div className="max-w-[80%] rounded-[16px] rounded-tr-[4px] px-4 py-3"
+                style={{ background: "linear-gradient(135deg, rgba(212,175,55,0.15), rgba(212,175,55,0.08))", border: "1px solid rgba(212,175,55,0.2)" }}>
+                <p className="orda-inter text-sm text-[#F6F4EC]">{t("aiPreview.sampleQuestion")}</p>
+              </div>
+            </div>
+            <div className="flex justify-start gap-3">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "rgba(87,214,209,0.12)", border: "1px solid rgba(87,214,209,0.2)" }}>
+                <span className="text-sm">⚜</span>
+              </div>
+              <div className="max-w-[85%] rounded-[16px] rounded-tl-[4px] px-4 py-3" style={{ background: "rgba(34,38,47,0.7)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                <p className="orda-inter text-sm text-[#F6F4EC] leading-relaxed">
+                  {t("aiPreview.sampleAnswer")}
+                </p>
+              </div>
+            </div>
+          </div>
+        </ScrollReveal>
+      </div>
+    </section>
+  );
+}
+
+function ArtifactsPreviewSection({ onExplore }: { onExplore: () => void }) {
+  const { t } = useTranslation();
+  const { data: artifactsData, isLoading } = useArtifacts();
+  const items: (ApiArtifact | null)[] = isLoading ? Array.from({ length: 4 }, () => null) : (artifactsData?.data || []).slice(0, 4);
+  const rarityIcons: Record<string, string> = { legendary: "⚜", rare: "🗿", common: "🪶" };
+
+  return (
+    <section className="relative py-28 md:py-36" style={{ background: "#0F1115" }}>
+      <div className="max-w-6xl mx-auto px-6">
+        <ScrollReveal className="text-center mb-14">
+          <div className="badge-gold mb-4 inline-block">{t("artifactsPreview.badge")}</div>
+          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC]">{t("artifactsPreview.title")}</h2>
+        </ScrollReveal>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+          {items.map((artifact, i) => (
+            <ScrollReveal key={artifact?.id ?? `artifact-skeleton-${i}`} delay={i * 0.06}>
+              {!artifact ? (
+                <div className="rounded-[20px] aspect-square" style={{ background: "rgba(34,38,47,0.5)" }} />
+              ) : (
+                <div onClick={onExplore} className="rounded-[20px] p-5 cursor-pointer card-hover gold-hover aspect-square flex flex-col items-center justify-center text-center"
+                  style={{ background: "rgba(34,38,47,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <span className="text-4xl mb-3">{rarityIcons[artifact.rarity?.toLowerCase()] || "🪶"}</span>
+                  <h3 className="orda-cinzel text-xs font-semibold text-[#F6F4EC]">{artifact.name}</h3>
+                  <span className="text-[10px] orda-inter text-[#B7BAC3] mt-1">{artifact.era}</span>
+                </div>
+              )}
+            </ScrollReveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AdventureSection() {
+  const { t } = useTranslation();
+  const items = [
+    { icon: Zap, title: t("adventure.items.quests.title"), text: t("adventure.items.quests.text") },
+    { icon: TrendingUp, title: t("adventure.items.rank.title"), text: t("adventure.items.rank.text") },
+    { icon: Award, title: t("adventure.items.achievements.title"), text: t("adventure.items.achievements.text") },
+    { icon: BookOpen, title: t("adventure.items.certificate.title"), text: t("adventure.items.certificate.text") },
+  ];
+  return (
+    <section className="relative py-28 md:py-36" style={{ background: "linear-gradient(180deg, #0F1115 0%, #12141B 100%)" }}>
+      <div className="max-w-5xl mx-auto px-6">
+        <ScrollReveal className="text-center mb-14">
+          <div className="badge-gold mb-4 inline-block">{t("adventure.badge")}</div>
+          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC] mb-4">{t("adventure.title")}</h2>
+          <p className="orda-inter text-[#B7BAC3] max-w-xl mx-auto">
+            {t("adventure.description")}
+          </p>
+        </ScrollReveal>
+        <ScrollReveal delay={0.15} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {items.map((item) => (
+            <div key={item.title} className="rounded-[20px] p-6 text-center card-hover gold-hover" style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 mx-auto" style={{ background: "rgba(212,175,55,0.1)", border: "1px solid rgba(212,175,55,0.2)" }}>
+                <item.icon size={18} color="#D4AF37" />
+              </div>
+              <h3 className="orda-cinzel text-sm font-semibold text-[#F6F4EC] mb-2">{item.title}</h3>
+              <p className="orda-inter text-xs text-[#B7BAC3] leading-relaxed">{item.text}</p>
+            </div>
+          ))}
+        </ScrollReveal>
+      </div>
+    </section>
+  );
+}
+
+function StatisticsSection() {
+  const { t } = useTranslation();
+  const { data: citiesData } = useCities();
+  const { data: artifactsData } = useArtifacts();
+  const { data: questsData } = useQuests();
+  const citiesTotal = citiesData?.meta.total ?? 0;
+  const artifactsTotal = artifactsData?.meta.total ?? 0;
+  const questsTotal = questsData?.meta.total ?? 0;
+
+  return (
+    <section className="relative py-24 md:py-32"
+      style={{ background: "#0D0F15", borderTop: "1px solid rgba(255,255,255,0.04)", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+      <div className="max-w-5xl mx-auto px-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          <StatCounter value={citiesTotal} label={t("stats.cities")} />
+          <StatCounter value={artifactsTotal} label={t("stats.artifacts")} />
+          <StatCounter value={questsTotal} label={t("stats.quests")} />
+          <StatCounter value={820} label={t("stats.years")} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FinalCTASection({ onStart }: { onStart: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <section className="relative py-32 md:py-40 overflow-hidden text-center" style={{ background: "radial-gradient(ellipse at 50% 40%, rgba(212,175,55,0.08) 0%, #0F1115 65%)" }}>
+      <DustParticles />
+      <div className="relative z-10 max-w-2xl mx-auto px-6">
+        <ScrollReveal>
+          <span className="orda-cinzel text-2xl text-[#D4AF37] block mb-4">⬦</span>
+          <h2 className="orda-cinzel text-3xl md:text-5xl font-bold text-[#F6F4EC] mb-6">{t("finalCta.title")}</h2>
+          <p className="orda-inter text-[#B7BAC3] text-base md:text-lg mb-10 leading-relaxed">
+            {t("finalCta.description")}
+          </p>
+          <button onClick={onStart} className="btn-primary text-base px-10 py-4 inline-flex items-center gap-3">
+            <span>{t("finalCta.cta")}</span>
+            <ArrowRight size={18} />
+          </button>
+        </ScrollReveal>
+      </div>
+    </section>
+  );
+}
+
+function LandingFooter() {
+  const { t } = useTranslation();
+  const links = [t("footer.links.journey"), t("footer.links.cities"), t("footer.links.aiHistorian"), t("footer.links.artifacts")];
+  return (
+    <footer className="relative py-12 border-t" style={{ background: "#0A0C10", borderColor: "rgba(255,255,255,0.05)" }}>
+      <div className="max-w-6xl mx-auto px-6">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)" }}>
+              <span className="text-[#0F1115] font-bold text-sm orda-cinzel">O</span>
+            </div>
+            <span className="text-base font-bold orda-cinzel tracking-[0.2em] text-[#D4AF37]">ORDA</span>
+          </div>
+          <div className="flex items-center gap-8">
+            {links.map((label) => (
+              <span key={label} className="text-xs orda-inter text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors cursor-default">{label}</span>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 border-t" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
+          <p className="text-[11px] orda-inter text-[#B7BAC3]">{t("footer.copyright", { year: new Date().getFullYear() })}</p>
+          <p className="text-[11px] orda-inter text-[#B7BAC3]">{t("footer.subtitle")}</p>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+function LandingStory({ onStart }: { onStart: () => void }) {
+  return (
+    <div className="relative">
+      <JourneySection />
+      <TimelineSection />
+      <MapPreviewSection onExplore={onStart} />
+      <CitiesPreviewSection onExplore={onStart} />
+      <AIHistorianPreviewSection onExplore={onStart} />
+      <ArtifactsPreviewSection onExplore={onStart} />
+      <AdventureSection />
+      <StatisticsSection />
+      <FinalCTASection onStart={onStart} />
+      <LandingFooter />
+    </div>
+  );
+}
+
 // ─── CHARACTER SELECTION ──────────────────────────────────────────────────────
 function CharacterSelect({ onSelect }: { onSelect: (c: CharType) => void }) {
+  const { t } = useTranslation();
   const [hovered, setHovered] = useState<CharType | null>(null);
+  const characterData = getCharacterData(t);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 py-24 relative">
       <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at center top, rgba(212,175,55,0.04) 0%, transparent 60%)" }} />
 
       <div className="animate-fade-in text-center mb-16">
-        <div className="badge-gold mb-6 inline-block">CHAPTER I</div>
-        <h1 className="orda-cinzel text-4xl md:text-5xl font-bold text-[#F6F4EC] mb-4">Choose Your Path</h1>
+        <div className="badge-gold mb-6 inline-block">{t("chars.badge")}</div>
+        <h1 className="orda-cinzel text-4xl md:text-5xl font-bold text-[#F6F4EC] mb-4">{t("chars.title")}</h1>
         <p className="orda-inter text-[#B7BAC3] text-base max-w-md mx-auto leading-relaxed">
-          Your role shapes the journey. Each path reveals a different face of the Golden Horde's magnificent story.
+          {t("chars.description")}
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl w-full">
-        {(Object.entries(CHARACTER_DATA) as [CharType, typeof CHARACTER_DATA[CharType]][]).map(([key, char], i) => {
+        {(Object.entries(characterData) as [CharType, CharacterData[CharType]][]).map(([key, char], i) => {
           const Icon = char.icon;
           const isHovered = hovered === key;
           return (
@@ -608,7 +1095,7 @@ function CharacterSelect({ onSelect }: { onSelect: (c: CharType) => void }) {
                   color: isHovered ? "#0F1115" : char.color,
                   border: `1px solid ${char.color}30`,
                 }}>
-                Choose {char.name.split(" ")[1]}
+                {t("chars.choose", { name: char.shortName })}
               </button>
             </div>
           );
@@ -620,8 +1107,9 @@ function CharacterSelect({ onSelect }: { onSelect: (c: CharType) => void }) {
 
 // ─── STORY INTRO ──────────────────────────────────────────────────────────────
 function StoryIntro({ character, onBegin }: { character: CharType; onBegin: () => void }) {
+  const { t } = useTranslation();
   const [phase, setPhase] = useState(0);
-  const char = CHARACTER_DATA[character];
+  const char = getCharacterData(t)[character];
 
   useEffect(() => {
     const timers = [
@@ -658,15 +1146,15 @@ function StoryIntro({ character, onBegin }: { character: CharType; onBegin: () =
           <div className="rounded-[20px] p-10 mb-8 relative"
             style={{ background: "rgba(23,26,32,0.8)", border: "1px solid rgba(212,175,55,0.15)", boxShadow: "0 0 80px rgba(212,175,55,0.08), inset 0 0 40px rgba(212,175,55,0.02)" }}>
 
-            <div className="text-[#D4AF37] text-xs tracking-[0.3em] orda-cinzel mb-6">— THE ORACLE SPEAKS —</div>
+            <div className="text-[#D4AF37] text-xs tracking-[0.3em] orda-cinzel mb-6">{t("intro.oracleSpeaks")}</div>
 
             <blockquote className="orda-cormorant text-2xl md:text-3xl text-[#F6F4EC] leading-relaxed italic font-light mb-6">
-              "The year is XIII century. The Great Steppe awaits. Your journey begins in the capital of the Golden Horde — Sarai Batu, city of ten thousand souls."
+              "{t("intro.quote")}"
             </blockquote>
 
             <div className="flex items-center justify-center gap-3 text-sm text-[#B7BAC3] orda-inter">
               <span className="w-8 h-px bg-[#D4AF37]/30" />
-              <span>You are <span className="text-[#D4AF37]">{char.name}</span></span>
+              <span>{t("intro.youArePrefix")} <span className="text-[#D4AF37]">{char.name}</span>{t("intro.youAreSuffix")}</span>
               <span className="w-8 h-px bg-[#D4AF37]/30" />
             </div>
           </div>
@@ -675,11 +1163,11 @@ function StoryIntro({ character, onBegin }: { character: CharType; onBegin: () =
         {/* CTA */}
         <div className={`transition-all duration-1000 delay-700 ${phase >= 3 ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
           <button onClick={onBegin} className="btn-primary text-base px-14 py-4 flex items-center gap-3 mx-auto">
-            <span>Begin Adventure</span>
+            <span>{t("intro.begin")}</span>
             <ChevronRight size={18} />
           </button>
           <p className="text-[#B7BAC3] text-xs mt-4 orda-inter tracking-wide">
-            The Great Steppe remembers those who dare to explore it.
+            {t("intro.footer")}
           </p>
         </div>
       </div>
@@ -690,7 +1178,8 @@ function StoryIntro({ character, onBegin }: { character: CharType; onBegin: () =
 }
 
 // ─── INTERACTIVE MAP ──────────────────────────────────────────────────────────
-function InteractiveMap({ onSelectCity }: { onSelectCity: (city: City) => void }) {
+function InteractiveMap({ cities, onSelectCity }: { cities: City[]; onSelectCity: (city: City) => void }) {
+  const { t } = useTranslation();
   const [hovered, setHovered] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
 
@@ -771,7 +1260,7 @@ function InteractiveMap({ onSelectCity }: { onSelectCity: (city: City) => void }
           className="route-path" stroke="url(#route-grad)" strokeWidth="1.5" fill="none" />
 
         {/* City markers */}
-        {CITIES.map((city) => {
+        {cities.map((city) => {
           const isHov = hovered === city.id;
           return (
             <g key={city.id} className="city-marker"
@@ -833,26 +1322,26 @@ function InteractiveMap({ onSelectCity }: { onSelectCity: (city: City) => void }
           <line x1="0" y1="0" x2="80" y2="0" stroke="rgba(212,175,55,0.4)" strokeWidth="1" />
           <line x1="0" y1="-4" x2="0" y2="4" stroke="rgba(212,175,55,0.4)" strokeWidth="1" />
           <line x1="80" y1="-4" x2="80" y2="4" stroke="rgba(212,175,55,0.4)" strokeWidth="1" />
-          <text x="40" y="14" textAnchor="middle" fill="rgba(212,175,55,0.5)" fontSize="8" fontFamily="Inter,sans-serif">500 km</text>
+          <text x="40" y="14" textAnchor="middle" fill="rgba(212,175,55,0.5)" fontSize="8" fontFamily="Inter,sans-serif">{t("map.scale")}</text>
         </g>
 
         {/* Title overlay */}
         <text x="450" y="32" textAnchor="middle" fill="rgba(212,175,55,0.35)"
           fontSize="11" fontFamily="Cinzel,serif" letterSpacing="4">
-          GOLDEN HORDE TERRITORY · XIII–XV CENTURY
+          {t("map.titleOverlay")}
         </text>
       </svg>
 
       {/* Hover tooltip */}
       {hovered && (() => {
-        const city = CITIES.find(c => c.id === hovered);
+        const city = cities.find(c => c.id === hovered);
         if (!city) return null;
         return (
           <div className="absolute bottom-4 left-4 glass rounded-[14px] px-4 py-3 pointer-events-none animate-fade-in"
             style={{ maxWidth: 240 }}>
             <div className="text-[#D4AF37] text-xs orda-cinzel tracking-widest mb-1">{city.name}</div>
             <div className="text-[#B7BAC3] text-xs orda-inter">{city.subtitle}</div>
-            <div className="text-[#B7BAC3] text-xs orda-inter mt-1">Click to explore →</div>
+            <div className="text-[#B7BAC3] text-xs orda-inter mt-1">{t("map.clickToExplore")}</div>
           </div>
         );
       })()}
@@ -864,9 +1353,34 @@ function InteractiveMap({ onSelectCity }: { onSelectCity: (city: City) => void }
 function Dashboard({ character, onSelectCity, onNav }: {
   character: CharType; onSelectCity: (c: City) => void; onNav: (v: View) => void;
 }) {
-  const char = CHARACTER_DATA[character];
-  const [activeQuest] = useState(QUESTS[0]);
-  const progress = 34;
+  const { t } = useTranslation();
+  const char = getCharacterData(t)[character];
+
+  const { data: citiesData, isLoading: citiesLoading } = useCities();
+  const { data: artifactsData, isLoading: artifactsLoading } = useArtifacts();
+  const { data: questsData, isLoading: questsLoading } = useQuests();
+  const { summaryQuery, statsQuery, achievementsQuery } = useProgress();
+  const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
+  const cityNameById = (id: string) => cities.find(c => c.id === id)?.name || t("common.unknown");
+  const artifacts = (artifactsData?.data || [])
+    .slice(0, 3)
+    .map(a => mapApiArtifact(a, cityNameById(a.city_id), t));
+
+  const summary = summaryQuery.data;
+  const stats = statsQuery.data;
+  const records = summary?.records;
+  const totalQuests = questsData?.meta.total ?? 0;
+  const questsCompleted = countCompletedByType(records, "quest");
+  const citiesVisited = countCompletedByType(records, "city");
+  const artifactsCollected = countCompletedByType(records, "artifact");
+  const journeyPercent = Math.round(summary?.completion_percent ?? 0);
+  const questsPercent = totalQuests > 0 ? Math.round((questsCompleted / totalQuests) * 100) : 0;
+
+  const activeQuest = (questsData?.data || [])
+    .map(q => ({ ...mapApiQuest(q, cityNameById(q.city_id)), completionStatus: q.completion_status }))
+    .find(q => q.completionStatus !== "completed") || null;
+
+  const achievements = achievementsQuery.data || [];
 
   return (
     <div className="min-h-screen pt-16 flex flex-col" style={{ background: "#0F1115" }}>
@@ -892,15 +1406,15 @@ function Dashboard({ character, onSelectCity, onNav }: {
           {/* Journey Progress */}
           <div className="rounded-[16px] p-4" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs orda-cinzel tracking-widest text-[#B7BAC3]">JOURNEY</span>
-              <span className="text-[#D4AF37] text-sm font-semibold orda-cinzel">{progress}%</span>
+              <span className="text-xs orda-cinzel tracking-widest text-[#B7BAC3]">{t("dashboard.journey")}</span>
+              <span className="text-[#D4AF37] text-sm font-semibold orda-cinzel">{journeyPercent}%</span>
             </div>
             <div className="w-full h-1.5 rounded-full mb-3" style={{ background: "rgba(255,255,255,0.06)" }}>
               <div className="h-full rounded-full progress-bar-fill"
-                style={{ width: `${progress}%`, background: "linear-gradient(90deg,#D4AF37,#C9962C)" }} />
+                style={{ width: `${journeyPercent}%`, background: "linear-gradient(90deg,#D4AF37,#C9962C)" }} />
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {[["2/6", "Cities"], ["8", "Artifacts"], ["3", "Quests"]].map(([v, l]) => (
+              {[[`${citiesVisited}/${cities.length}`, t("dashboard.statCities")], [`${artifactsCollected}`, t("dashboard.statArtifacts")], [`${questsCompleted}`, t("dashboard.statQuests")]].map(([v, l]) => (
                 <div key={l} className="text-center">
                   <div className="text-[#D4AF37] text-sm font-bold orda-cinzel">{v}</div>
                   <div className="text-[#B7BAC3] text-[10px] orda-inter">{l}</div>
@@ -911,60 +1425,87 @@ function Dashboard({ character, onSelectCity, onNav }: {
 
           {/* Current Quest */}
           <div>
-            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-3 px-1">ACTIVE QUEST</div>
-            <div className="quest-card rounded-[14px] p-4 cursor-pointer"
-              style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.12)" }}
-              onClick={() => onNav("quests")}>
-              <div className="flex items-start gap-2 mb-2">
-                <Zap size={14} color="#D4AF37" className="mt-0.5 flex-shrink-0" />
-                <div>
-                  <div className="text-[#F6F4EC] text-xs font-semibold orda-cinzel">{activeQuest.title}</div>
-                  <div className="text-[#B7BAC3] text-[11px] orda-inter mt-1 leading-relaxed line-clamp-2">{activeQuest.description}</div>
+            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-3 px-1">{t("dashboard.activeQuest")}</div>
+            {questsLoading ? (
+              <div className="rounded-[14px] p-4" style={{ background: "rgba(15,17,21,0.5)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                <div className="h-3 w-32 rounded-full mb-2" style={{ background: "rgba(255,255,255,0.05)" }} />
+                <div className="h-2 w-full rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
+              </div>
+            ) : activeQuest ? (
+              <div className="quest-card rounded-[14px] p-4 cursor-pointer"
+                style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.12)" }}
+                onClick={() => onNav("quests")}>
+                <div className="flex items-start gap-2 mb-2">
+                  <Zap size={14} color="#D4AF37" className="mt-0.5 flex-shrink-0" />
+                  <div>
+                    <div className="text-[#F6F4EC] text-xs font-semibold orda-cinzel">{activeQuest.title}</div>
+                    <div className="text-[#B7BAC3] text-[11px] orda-inter mt-1 leading-relaxed line-clamp-2">{activeQuest.description}</div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-3">
+                  <span className="badge-gold text-[9px]">+{activeQuest.xp} XP</span>
+                  <span className="text-[#57D6D1] text-[10px] orda-inter">{activeQuest.city}</span>
                 </div>
               </div>
-              <div className="flex items-center justify-between mt-3">
-                <span className="badge-gold text-[9px]">+{activeQuest.xp} XP</span>
-                <span className="text-[#57D6D1] text-[10px] orda-inter">{activeQuest.city}</span>
+            ) : (
+              <div className="rounded-[14px] p-4 text-center" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                <p className="text-[11px] orda-inter text-[#B7BAC3]">{t("dashboard.noQuests")}</p>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Recent Artifacts */}
           <div>
             <div className="flex items-center justify-between mb-3 px-1">
-              <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">ARTIFACTS</span>
-              <button onClick={() => onNav("artifacts")} className="text-[10px] text-[#D4AF37] orda-inter hover:opacity-70">See all</button>
+              <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">{t("dashboard.artifactsLabel")}</span>
+              <button onClick={() => onNav("artifacts")} className="text-[10px] text-[#D4AF37] orda-inter hover:opacity-70">{t("common.seeAll")}</button>
             </div>
             <div className="space-y-2">
-              {ARTIFACTS.slice(0, 3).map(a => (
-                <div key={a.id} className="flex items-center gap-3 p-2.5 rounded-xl cursor-pointer hover:bg-white/[0.03] transition-colors">
-                  <span className="text-lg">{a.icon}</span>
-                  <div>
-                    <div className="text-[#F6F4EC] text-xs orda-cinzel">{a.name}</div>
-                    <div className="text-[#B7BAC3] text-[10px] orda-inter">{a.category}</div>
+              {(artifactsLoading ? Array.from({ length: 3 }) : artifacts).map((a, index) => (
+                artifactsLoading || !a ? (
+                  <div key={`artifact-skeleton-${index}`} className="rounded-[14px] p-3" style={{ background: "rgba(15,17,21,0.5)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                    <div className="w-full h-16 rounded-[10px] mb-3" style={{ background: "rgba(255,255,255,0.04)" }} />
+                    <div className="h-2 w-20 rounded-full mb-2" style={{ background: "rgba(255,255,255,0.05)" }} />
+                    <div className="h-2 w-28 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
                   </div>
-                </div>
+                ) : (
+                  <div key={a.id} className="flex items-center gap-3 p-2.5 rounded-xl cursor-pointer hover:bg-white/[0.03] transition-colors">
+                    <span className="text-lg">{a.icon}</span>
+                    <div>
+                      <div className="text-[#F6F4EC] text-xs orda-cinzel">{a.name}</div>
+                      <div className="text-[#B7BAC3] text-[10px] orda-inter">{a.category}</div>
+                    </div>
+                  </div>
+                )
               ))}
             </div>
           </div>
 
           {/* Achievements */}
           <div>
-            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-3 px-1">ACHIEVEMENTS</div>
+            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-3 px-1">{t("dashboard.achievementsLabel")}</div>
             <div className="space-y-2">
-              {[["First Step", "Began the journey", true], ["Merchant's Eye", "Visit first city", true], ["Map Reader", "Open the full map", false]].map(([name, desc, unlocked]) => (
-                <div key={name as string} className="flex items-center gap-3 p-2 rounded-xl"
-                  style={{ background: unlocked ? "rgba(212,175,55,0.05)" : "transparent", opacity: unlocked ? 1 : 0.4 }}>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-                    style={{ background: unlocked ? "rgba(212,175,55,0.15)" : "rgba(255,255,255,0.04)" }}>
-                    {unlocked ? <Check size={13} color="#D4AF37" /> : <Lock size={12} color="#B7BAC3" />}
+              {achievementsQuery.isLoading ? (
+                Array.from({ length: 2 }).map((_, i) => (
+                  <div key={`achievement-skeleton-${i}`} className="h-9 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }} />
+                ))
+              ) : achievements.length > 0 ? (
+                achievements.map((achievement) => (
+                  <div key={achievement.id} className="flex items-center gap-3 p-2 rounded-xl"
+                    style={{ background: "rgba(212,175,55,0.05)" }}>
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+                      style={{ background: "rgba(212,175,55,0.15)" }}>
+                      <Check size={13} color="#D4AF37" />
+                    </div>
+                    <div>
+                      <div className="text-xs orda-cinzel text-[#F6F4EC]">{achievement.title}</div>
+                      <div className="text-[10px] orda-inter text-[#B7BAC3]">{achievement.description}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-xs orda-cinzel text-[#F6F4EC]">{name as string}</div>
-                    <div className="text-[10px] orda-inter text-[#B7BAC3]">{desc as string}</div>
-                  </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="text-[11px] orda-inter text-[#B7BAC3] px-1">{t("dashboard.noAchievements")}</p>
+              )}
             </div>
           </div>
         </aside>
@@ -973,11 +1514,11 @@ function Dashboard({ character, onSelectCity, onNav }: {
         <main className="p-4 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="orda-cinzel text-base font-bold text-[#F6F4EC] tracking-wider">Interactive Map</h2>
-              <p className="text-xs text-[#B7BAC3] orda-inter">Golden Horde Territory · Select a city to explore</p>
+              <h2 className="orda-cinzel text-base font-bold text-[#F6F4EC] tracking-wider">{t("dashboard.interactiveMap")}</h2>
+              <p className="text-xs text-[#B7BAC3] orda-inter">{t("dashboard.mapSubtitle")}</p>
             </div>
             <div className="flex gap-2">
-              {["Routes", "Cities", "Rivers"].map((label, i) => (
+              {[t("dashboard.routes"), t("dashboard.cities"), t("dashboard.rivers")].map((label, i) => (
                 <button key={label} className="text-xs px-3 py-1.5 rounded-lg orda-inter transition-colors"
                   style={{
                     background: i === 0 ? "rgba(212,175,55,0.12)" : "rgba(255,255,255,0.04)",
@@ -990,17 +1531,21 @@ function Dashboard({ character, onSelectCity, onNav }: {
             </div>
           </div>
           <div className="flex-1">
-            <InteractiveMap onSelectCity={onSelectCity} />
+            <InteractiveMap cities={cities} onSelectCity={onSelectCity} />
           </div>
           {/* City quick-access row */}
           <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
-            {CITIES.map(city => (
-              <button key={city.id} onClick={() => onSelectCity(city)}
-                className="flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl text-xs orda-cinzel tracking-wide transition-all hover:border-[#D4AF3750] hover:text-[#D4AF37]"
-                style={{ background: "rgba(34,38,47,0.6)", border: "1px solid rgba(255,255,255,0.06)", color: "#B7BAC3" }}>
-                <MapPin size={11} color="#D4AF37" />
-                {city.name}
-              </button>
+            {(citiesLoading ? Array.from({ length: 6 }) : cities).map((city, index) => (
+              citiesLoading || !city ? (
+                <div key={`city-skeleton-${index}`} className="rounded-[12px] px-3 py-2 h-9 w-24 flex-shrink-0" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }} />
+              ) : (
+                <button key={city.id} onClick={() => onSelectCity(city)}
+                  className="flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl text-xs orda-cinzel tracking-wide transition-all hover:border-[#D4AF3750] hover:text-[#D4AF37]"
+                  style={{ background: "rgba(34,38,47,0.6)", border: "1px solid rgba(255,255,255,0.06)", color: "#B7BAC3" }}>
+                  <MapPin size={11} color="#D4AF37" />
+                  {city.name}
+                </button>
+              )
             ))}
           </div>
         </main>
@@ -1019,57 +1564,57 @@ function Dashboard({ character, onSelectCity, onNav }: {
                 <MessageSquare size={16} color="#57D6D1" />
               </div>
               <div>
-                <div className="text-sm orda-cinzel text-[#57D6D1]">AI Historian</div>
-                <div className="text-[10px] orda-inter text-[#B7BAC3]">Ask anything</div>
+                <div className="text-sm orda-cinzel text-[#57D6D1]">{t("dashboard.aiTeaserTitle")}</div>
+                <div className="text-[10px] orda-inter text-[#B7BAC3]">{t("dashboard.aiTeaserSubtitle")}</div>
               </div>
             </div>
             <p className="text-xs text-[#B7BAC3] orda-inter leading-relaxed line-clamp-3">
-              "The Golden Horde was arguably the most cosmopolitan empire of the 13th century. Ask me about its trade, politics, or art..."
+              {t("dashboard.aiTeaserQuote")}
             </p>
             <button className="mt-3 w-full py-2 rounded-xl text-xs orda-cinzel tracking-widest transition-colors"
               style={{ background: "rgba(87,214,209,0.1)", color: "#57D6D1", border: "1px solid rgba(87,214,209,0.15)" }}>
-              Open AI Historian →
+              {t("dashboard.openAiHistorian")}
             </button>
           </div>
 
           {/* Progress rings */}
           <div className="rounded-[16px] p-4" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-4">EXPLORER LEVEL</div>
+            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-4">{t("dashboard.explorerLevel")}</div>
             <div className="flex items-center justify-center gap-6">
               <div className="flex flex-col items-center gap-2">
                 <div className="relative">
-                  <ProgressRing value={34} size={72} />
+                  <ProgressRing value={journeyPercent} size={72} />
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-sm font-bold orda-cinzel text-[#D4AF37]">34%</span>
+                    <span className="text-sm font-bold orda-cinzel text-[#D4AF37]">{journeyPercent}%</span>
                   </div>
                 </div>
-                <span className="text-[10px] text-[#B7BAC3] orda-inter">Journey</span>
+                <span className="text-[10px] text-[#B7BAC3] orda-inter">{t("dashboard.journeyLabel")}</span>
               </div>
               <div className="flex flex-col items-center gap-2">
                 <div className="relative">
-                  <ProgressRing value={60} size={72} />
+                  <ProgressRing value={questsPercent} size={72} />
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-sm font-bold orda-cinzel text-[#D4AF37]">60%</span>
+                    <span className="text-sm font-bold orda-cinzel text-[#D4AF37]">{questsPercent}%</span>
                   </div>
                 </div>
-                <span className="text-[10px] text-[#B7BAC3] orda-inter">Quests</span>
+                <span className="text-[10px] text-[#B7BAC3] orda-inter">{t("dashboard.questsLabel")}</span>
               </div>
             </div>
             <div className="mt-4 p-3 rounded-xl text-center"
               style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.1)" }}>
-              <div className="text-[#D4AF37] text-sm font-bold orda-cinzel">Level 3</div>
-              <div className="text-[#B7BAC3] text-[10px] orda-inter">Steppe Wanderer</div>
+              <div className="text-[#D4AF37] text-sm font-bold orda-cinzel">{t("dashboard.level", { level: stats?.level ?? 1 })}</div>
+              <div className="text-[#B7BAC3] text-[10px] orda-inter">{t("dashboard.xpEarned", { xp: stats?.xp ?? 0 })}</div>
             </div>
           </div>
 
           {/* Notifications */}
           <div>
-            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-3 px-1">NOTIFICATIONS</div>
+            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-3 px-1">{t("dashboard.notifications")}</div>
             <div className="space-y-2">
               {[
-                { icon: "⚜", text: "New quest unlocked in Sarai Batu", time: "2m ago", color: "#D4AF37" },
-                { icon: "🏺", text: "Artifact discovered: Golden Jug", time: "1h ago", color: "#6FCF97" },
-                { icon: "📜", text: "AI has new insights about Bolgar", time: "3h ago", color: "#57D6D1" },
+                { icon: "⚜", text: t("dashboard.notification1"), time: t("dashboard.timeAgo2m"), color: "#D4AF37" },
+                { icon: "🏺", text: t("dashboard.notification2"), time: t("dashboard.timeAgo1h"), color: "#6FCF97" },
+                { icon: "📜", text: t("dashboard.notification3"), time: t("dashboard.timeAgo3h"), color: "#57D6D1" },
               ].map((n, i) => (
                 <div key={i} className="flex items-start gap-3 p-3 rounded-xl hover:bg-white/[0.02] cursor-pointer transition-colors">
                   <span className="text-base mt-0.5">{n.icon}</span>
@@ -1088,9 +1633,9 @@ function Dashboard({ character, onSelectCity, onNav }: {
             onClick={() => onNav("certificate")}>
             <div className="flex items-center gap-2 mb-2">
               <Award size={16} color="#D4AF37" />
-              <span className="text-sm orda-cinzel text-[#D4AF37]">Certificate</span>
+              <span className="text-sm orda-cinzel text-[#D4AF37]">{t("dashboard.certificate")}</span>
             </div>
-            <p className="text-xs text-[#B7BAC3] orda-inter">Complete your journey to earn your Explorer certificate</p>
+            <p className="text-xs text-[#B7BAC3] orda-inter">{t("dashboard.certificateTeaser")}</p>
           </div>
         </aside>
       </div>
@@ -1100,15 +1645,29 @@ function Dashboard({ character, onSelectCity, onNav }: {
 
 // ─── CITY PAGE ────────────────────────────────────────────────────────────────
 function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onNav: (v: View) => void }) {
+  const { t } = useTranslation();
+  const { data: artifactsData, isLoading: artifactsLoading } = useArtifacts();
+  const artifacts = (artifactsData?.data || []).filter((artifact) => artifact.city_id === city.id).slice(0, 3);
   const [activeTab, setActiveTab] = useState<"overview" | "timeline" | "gallery" | "stats">("overview");
 
   const timelineEvents = [
-    { year: "1220s", event: "Mongol forces first arrive in the region under Jochi Khan" },
-    { year: city.founded, event: `${city.name} established as a major Golden Horde settlement` },
-    { year: "1280s", event: "City reaches peak prosperity under Tuda-Mengu Khan" },
-    { year: "1313", event: "Özbeg Khan converts to Islam — city mosques multiply" },
-    { year: "1395", event: "Timur's invasion devastates the Golden Horde" },
-    { year: "1438", event: "Dissolution of the unified Golden Horde begins" },
+    { year: "1220s", event: t("city.timelineEvents.mongolArrival") },
+    { year: city.founded, event: t("city.timelineEvents.settlementEstablished", { city: city.name }) },
+    { year: "1280s", event: t("city.timelineEvents.peakProsperity") },
+    { year: "1313", event: t("city.timelineEvents.islamConversion") },
+    { year: "1395", event: t("city.timelineEvents.timurInvasion") },
+    { year: "1438", event: t("city.timelineEvents.dissolution") },
+  ];
+
+  const statsGrid = [
+    [t("city.statsLabels.tradeRoutes"), "12", t("city.statsLabels.tradeRoutesSub")],
+    [t("city.statsLabels.mosques"), "13", t("city.statsLabels.mosquesSub")],
+    [t("city.statsLabels.population2"), city.population, t("city.statsLabels.populationSub")],
+    [t("city.statsLabels.languages"), "7+", t("city.statsLabels.languagesSub")],
+    [t("city.statsLabels.crafts"), "40+", t("city.statsLabels.craftsSub")],
+    [t("city.statsLabels.caravanserais"), "8", t("city.statsLabels.caravanseraisSub")],
+    [t("city.statsLabels.palaces"), "3", t("city.statsLabels.palacesSub")],
+    [t("city.statsLabels.centuries"), "3", t("city.statsLabels.centuriesSub")],
   ];
 
   return (
@@ -1134,20 +1693,20 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
 
         <div className="relative z-10 h-full flex flex-col justify-end px-8 lg:px-16 pb-8">
           <button onClick={onBack} className="flex items-center gap-2 text-sm text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors mb-4 orda-inter">
-            <ChevronLeft size={16} /> Back to Map
+            <ChevronLeft size={16} /> {t("city.backToMap")}
           </button>
           <div className="flex items-end gap-6">
             <div>
-              <div className="badge-gold mb-3">GOLDEN HORDE CITY</div>
+              <div className="badge-gold mb-3">{t("city.goldenHordeCity")}</div>
               <h1 className="orda-cinzel text-4xl md:text-5xl font-bold text-[#F6F4EC] mb-2 gold-glow-text">{city.name}</h1>
               <p className="orda-cormorant text-xl text-[#D4AF37] italic">{city.subtitle}</p>
             </div>
             <div className="ml-auto flex gap-3 flex-shrink-0">
               <button onClick={() => onNav("quests")} className="btn-primary text-sm py-3 px-6 flex items-center gap-2">
-                <Zap size={14} /> Quest
+                <Zap size={14} /> {t("city.quest")}
               </button>
               <button onClick={() => onNav("ai")} className="btn-teal text-sm py-3 px-6 flex items-center gap-2">
-                <MessageSquare size={14} /> Talk to AI
+                <MessageSquare size={14} /> {t("city.talkToAi")}
               </button>
             </div>
           </div>
@@ -1160,7 +1719,7 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
         {(["overview", "timeline", "gallery", "stats"] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`py-4 text-sm orda-cinzel tracking-wider capitalize transition-all duration-200 ${activeTab === tab ? "tab-active" : "tab-inactive"}`}>
-            {tab}
+            {t(`city.tabs.${tab}`)}
           </button>
         ))}
       </div>
@@ -1171,7 +1730,7 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
             <div className="lg:col-span-2 space-y-6">
               {/* Description */}
               <div className="rounded-[20px] p-7" style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <h2 className="orda-cinzel text-lg font-semibold text-[#F6F4EC] mb-4">Historical Overview</h2>
+                <h2 className="orda-cinzel text-lg font-semibold text-[#F6F4EC] mb-4">{t("city.historicalOverview")}</h2>
                 <p className="orda-inter text-[#B7BAC3] leading-[1.85] text-base">{city.description}</p>
               </div>
 
@@ -1179,14 +1738,14 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
               <div className="rounded-[20px] p-7" style={{ background: "rgba(212,175,55,0.04)", border: "1px solid rgba(212,175,55,0.1)" }}>
                 <div className="flex items-center gap-3 mb-3">
                   <Crown size={18} color="#D4AF37" />
-                  <h2 className="orda-cinzel text-base font-semibold text-[#D4AF37]">Strategic Importance</h2>
+                  <h2 className="orda-cinzel text-base font-semibold text-[#D4AF37]">{t("city.strategicImportance")}</h2>
                 </div>
                 <p className="orda-cormorant text-xl italic text-[#F6F4EC] leading-relaxed">{city.importance}</p>
               </div>
 
               {/* Facts */}
               <div className="rounded-[20px] p-7" style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <h2 className="orda-cinzel text-base font-semibold text-[#F6F4EC] mb-4">Remarkable Facts</h2>
+                <h2 className="orda-cinzel text-base font-semibold text-[#F6F4EC] mb-4">{t("city.remarkableFacts")}</h2>
                 <div className="space-y-3">
                   {city.facts.map((fact, i) => (
                     <div key={i} className="flex items-start gap-3">
@@ -1203,7 +1762,7 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
 
             {/* Sidebar stats */}
             <div className="space-y-4">
-              {[["Founded", city.founded], ["Population", city.population], ["Era", "XIII–XV Century"], ["Region", "Golden Horde Ulus"]].map(([k, v]) => (
+              {[[t("city.founded"), city.founded], [t("city.population"), city.population], [t("city.era"), t("city.eraValue")], [t("city.region"), t("city.regionValue")]].map(([k, v]) => (
                 <div key={k} className="rounded-[16px] p-5" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-1">{k}</div>
                   <div className="text-[#F6F4EC] text-base orda-cinzel font-semibold">{v}</div>
@@ -1212,18 +1771,22 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
 
               {/* Related Artifacts */}
               <div className="rounded-[16px] p-5" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-3">CITY ARTIFACTS</div>
-                {ARTIFACTS.filter(a => a.city === city.name).slice(0, 3).map(a => (
-                  <div key={a.id} className="flex items-center gap-2 py-2 border-b border-white/5 last:border-0">
-                    <span>{a.icon}</span>
-                    <div>
-                      <div className="text-xs orda-cinzel text-[#F6F4EC]">{a.name}</div>
-                      <RarityBadge rarity={a.rarity} />
+                <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-3">{t("city.cityArtifacts")}</div>
+                {(artifactsLoading ? Array.from({ length: 3 }) : artifacts).map((a, index) => (
+                  artifactsLoading || !a ? (
+                    <div key={`city-artifact-skeleton-${index}`} className="rounded-[14px] p-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                      <div className="h-2 w-24 rounded-full mb-2" style={{ background: "rgba(255,255,255,0.05)" }} />
+                      <div className="h-2 w-16 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
                     </div>
-                  </div>
+                  ) : (
+                    <div key={a.id} className="rounded-[14px] p-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                      <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#D4AF37] mb-1">{a.era}</div>
+                      <div className="text-sm orda-cinzel text-[#F6F4EC]">{a.name}</div>
+                    </div>
+                  )
                 ))}
                 <button onClick={() => onNav("artifacts")} className="mt-3 w-full py-2 rounded-xl text-xs orda-cinzel text-[#D4AF37] hover:bg-[#D4AF3710] transition-colors">
-                  View All Artifacts →
+                  {t("city.viewAllArtifacts")}
                 </button>
               </div>
             </div>
@@ -1232,7 +1795,7 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
 
         {activeTab === "timeline" && (
           <div className="max-w-2xl animate-slide-up">
-            <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC] mb-8">Historical Timeline</h2>
+            <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC] mb-8">{t("city.historicalTimeline")}</h2>
             <div className="relative">
               <div className="absolute left-[72px] top-0 bottom-0 w-px" style={{ background: "linear-gradient(180deg, transparent, rgba(212,175,55,0.3) 10%, rgba(212,175,55,0.3) 90%, transparent)" }} />
               <div className="space-y-6">
@@ -1257,7 +1820,7 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
 
         {activeTab === "gallery" && (
           <div className="animate-slide-up">
-            <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC] mb-8">Gallery</h2>
+            <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC] mb-8">{t("city.gallery")}</h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {Array.from({ length: 6 }, (_, i) => (
                 <div key={i} className="aspect-[4/3] rounded-[16px] overflow-hidden relative gold-hover cursor-pointer"
@@ -1265,7 +1828,7 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="text-center">
                       <div className="text-4xl mb-2">{["🏛️", "🗺️", "⚔️", "🪙", "🏺", "📜"][i]}</div>
-                      <div className="text-xs orda-cinzel text-[#B7BAC3]">Historical View {i + 1}</div>
+                      <div className="text-xs orda-cinzel text-[#B7BAC3]">{t("city.historicalView", { index: i + 1 })}</div>
                     </div>
                   </div>
                 </div>
@@ -1276,16 +1839,7 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
 
         {activeTab === "stats" && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-slide-up">
-            {[
-              ["Trade Routes", "12", "Connected cities"],
-              ["Mosques", "13", "At city's peak"],
-              ["Population", city.population, "13th century"],
-              ["Languages", "7+", "Spoken in markets"],
-              ["Crafts", "40+", "Documented trades"],
-              ["Caravanserais", "8", "Waystation inns"],
-              ["Palaces", "3", "Royal residences"],
-              ["Centuries", "3", "Of Golden Horde rule"],
-            ].map(([label, value, sub]) => (
+            {statsGrid.map(([label, value, sub]) => (
               <div key={label} className="rounded-[20px] p-6 text-center"
                 style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
                 <div className="text-3xl font-bold orda-cinzel text-[#D4AF37] mb-1">{value}</div>
@@ -1302,39 +1856,37 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
 
 // ─── AI HISTORIAN ─────────────────────────────────────────────────────────────
 function AIHistorian({ onBack }: { onBack: () => void }) {
+  const { t } = useTranslation();
+  const chatMutation = useChatMutation();
   const [messages, setMessages] = useState<{ role: "ai" | "user"; text: string }[]>([
-    { role: "ai", text: AI_RESPONSES.greeting[0] },
+    { role: "ai", text: t("aiHistorian.greeting") },
   ]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
-  const [responseIdx, setResponseIdx] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const send = () => {
+  const send = async () => {
     if (!input.trim()) return;
     const userMsg = input.trim();
     setInput("");
     setMessages(m => [...m, { role: "user", text: userMsg }]);
     setTyping(true);
 
-    setTimeout(() => {
-      const resp = AI_RESPONSES.default[responseIdx % AI_RESPONSES.default.length];
-      setMessages(m => [...m, { role: "ai", text: resp }]);
-      setResponseIdx(i => i + 1);
+    try {
+      const response = await chatMutation.mutateAsync({ message: userMsg });
+      setMessages(m => [...m, { role: "ai", text: response.answer }]);
+    } catch {
+      setMessages(m => [...m, { role: "ai", text: t("aiHistorian.unavailable") }]);
+    } finally {
       setTyping(false);
-    }, 1800 + Math.random() * 800);
+    }
   };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typing]);
 
-  const suggestions = [
-    "What was daily life like in Sarai Batu?",
-    "Tell me about Khan Özbeg's conversion to Islam",
-    "How did the Silk Road work under the Golden Horde?",
-    "What happened to the empire after Timur's invasion?",
-  ];
+  const suggestions = t("aiHistorian.suggestions", { returnObjects: true }) as string[];
 
   return (
     <div className="min-h-screen pt-16 flex flex-col" style={{ background: "#0F1115" }}>
@@ -1352,20 +1904,20 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
               <span className="text-xl">⚜</span>
             </div>
             <div>
-              <h1 className="orda-cinzel text-lg font-bold text-[#F6F4EC]">ORDA Oracle</h1>
+              <h1 className="orda-cinzel text-lg font-bold text-[#F6F4EC]">{t("aiHistorian.title")}</h1>
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-[#6FCF97]" style={{ boxShadow: "0 0 6px rgba(111,207,151,0.6)" }} />
-                <span className="text-xs orda-inter text-[#B7BAC3]">AI Historian · Active</span>
+                <span className="text-xs orda-inter text-[#B7BAC3]">{t("aiHistorian.status")}</span>
               </div>
             </div>
           </div>
-          <div className="badge-teal">BETA</div>
+          <div className="badge-teal">{t("aiHistorian.beta")}</div>
         </div>
 
         {/* Suggested questions (show initially) */}
         {messages.length === 1 && (
           <div className="mb-6 animate-slide-up">
-            <p className="text-xs orda-cinzel tracking-widest text-[#B7BAC3] mb-3">SUGGESTED QUESTIONS</p>
+            <p className="text-xs orda-cinzel tracking-widest text-[#B7BAC3] mb-3">{t("aiHistorian.suggestedQuestions")}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {suggestions.map((s) => (
                 <button key={s} onClick={() => { setInput(s); }}
@@ -1398,9 +1950,9 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
                 {msg.role === "ai" && (
                   <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
                     <span className="text-[10px] orda-inter text-[#B7BAC3] flex items-center gap-1">
-                      <BookOpen size={10} /> Based on historical records
+                      <BookOpen size={10} /> {t("aiHistorian.basedOnRecords")}
                     </span>
-                    <span className="text-[10px] orda-cinzel text-[#D4AF37]">ORDA AI</span>
+                    <span className="text-[10px] orda-cinzel text-[#D4AF37]">{t("aiHistorian.aiLabel")}</span>
                   </div>
                 )}
               </div>
@@ -1436,7 +1988,7 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
             </button>
             <textarea
               className="flex-1 bg-transparent outline-none text-sm text-[#F6F4EC] orda-inter placeholder-[#B7BAC3] resize-none leading-relaxed"
-              placeholder="Ask the Oracle about the Golden Horde..."
+              placeholder={t("aiHistorian.placeholder")}
               rows={2}
               value={input}
               onChange={e => setInput(e.target.value)}
@@ -1454,7 +2006,7 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
             </div>
           </div>
           <p className="text-center text-[10px] orda-inter text-[#B7BAC3] mt-3">
-            AI responses are based on verified historical scholarship · 13th–15th century CE
+            {t("aiHistorian.disclaimer")}
           </p>
         </div>
       </div>
@@ -1464,10 +2016,15 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
 
 // ─── ARTIFACT GALLERY ─────────────────────────────────────────────────────────
 function ArtifactGallery({ onBack }: { onBack: () => void }) {
+  const { t } = useTranslation();
+  const { data: citiesData } = useCities();
+  const { data: artifactsData, isLoading, error } = useArtifacts();
   const [selected, setSelected] = useState<Artifact | null>(null);
   const [filter, setFilter] = useState("All");
-  const categories = ["All", ...Array.from(new Set(ARTIFACTS.map(a => a.category)))];
-  const filtered = filter === "All" ? ARTIFACTS : ARTIFACTS.filter(a => a.category === filter);
+  const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
+  const artifactItems = (artifactsData?.data || []).map((artifact) => mapApiArtifact(artifact, cities.find((city) => city.id === artifact.city_id)?.name || t("common.unknown"), t));
+  const categories = ["All", ...Array.from(new Set(artifactItems.map(a => a.category)))];
+  const filtered = filter === "All" ? artifactItems : artifactItems.filter(a => a.category === filter);
 
   return (
     <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#0F1115" }}>
@@ -1480,8 +2037,8 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
             <ChevronLeft size={16} color="#B7BAC3" />
           </button>
           <div>
-            <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC]">Artifact Collection</h1>
-            <p className="orda-inter text-sm text-[#B7BAC3] mt-1">{ARTIFACTS.length} objects recovered from the Great Steppe</p>
+            <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC]">{t("artifactGallery.title")}</h1>
+            <p className="orda-inter text-sm text-[#B7BAC3] mt-1">{t("artifactGallery.subtitle", { count: artifactItems.length })}</p>
           </div>
         </div>
 
@@ -1495,14 +2052,21 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
                 color: filter === cat ? "#D4AF37" : "#B7BAC3",
                 border: `1px solid ${filter === cat ? "rgba(212,175,55,0.3)" : "rgba(255,255,255,0.06)"}`,
               }}>
-              {cat}
+              {cat === "All" ? t("artifactGallery.all") : cat}
             </button>
           ))}
         </div>
 
         {/* Grid */}
+        {error && <div className="mb-4 text-sm text-[#B7BAC3]">{t("artifactGallery.unableToLoad")}</div>}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {filtered.map((artifact, i) => (
+          {isLoading ? Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="rounded-[20px] p-5" style={{ background: "rgba(34,38,47,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="aspect-square rounded-[14px] mb-4" style={{ background: "rgba(15,17,21,0.5)" }} />
+              <div className="h-2 w-20 rounded-full mb-2" style={{ background: "rgba(255,255,255,0.05)" }} />
+              <div className="h-2 w-24 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
+            </div>
+          )) : filtered.map((artifact, i) => (
             <div key={artifact.id}
               className="rounded-[20px] p-5 cursor-pointer card-hover gold-hover animate-scale-in"
               style={{ animationDelay: `${i * 0.07}s`, background: "rgba(34,38,47,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}
@@ -1555,7 +2119,7 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
             <p className="orda-inter text-sm text-[#B7BAC3] leading-[1.8] mb-6">{selected.description}</p>
 
             <div className="grid grid-cols-2 gap-3">
-              {[["Found", selected.found], ["City", selected.city]].map(([k, v]) => (
+              {[[t("artifactGallery.found"), selected.found], [t("artifactGallery.city"), selected.city]].map(([k, v]) => (
                 <div key={k} className="p-3 rounded-[12px]" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
                   <div className="text-[10px] orda-cinzel tracking-widest text-[#B7BAC3] mb-1">{k}</div>
                   <div className="text-sm orda-cinzel text-[#F6F4EC]">{v}</div>
@@ -1571,13 +2135,28 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
 
 // ─── QUEST VIEW ───────────────────────────────────────────────────────────────
 function QuestView({ onBack }: { onBack: () => void }) {
-  const [activeQuest, setActiveQuest] = useState(QUESTS[0]);
-  const [chosen, setChosen] = useState<null | "A" | "B">(null);
+  const { t } = useTranslation();
+  const { data: citiesData } = useCities();
+  const { data: questsData, isLoading, error } = useQuests();
+  const { completeQuestMutation } = useProgress();
+  const [activeQuest, setActiveQuest] = useState<(ApiQuest & { cityName: string }) | null>(null);
+  const [completedQuestId, setCompletedQuestId] = useState<string | null>(null);
+  const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
+  const questItems = (questsData?.data || []).map((quest) => ({ ...quest, cityName: cities.find((city) => city.id === quest.city_id)?.name || t("common.unknown") }));
+  const activeQuestUi = activeQuest ? mapApiQuest(activeQuest, activeQuest.cityName) : null;
 
-  const choices = {
-    q1: { A: "Accept the deal — profit first, politics second.", B: "Decline — loyalty to the Khan is worth more than silk." },
-    q2: { A: "Support the conversion — unity under Islam will strengthen the Horde.", B: "Counsel caution — religious change risks alienating the Shamanist clans." },
-    q3: { A: "Take the northern route through friendly clan territory.", B: "Ride south through the desert — shorter but dangerous." },
+  const isOnCooldown = Boolean(
+    activeQuest?.completion_status === "completed" &&
+    activeQuest.cooldown_until &&
+    new Date(activeQuest.cooldown_until).getTime() > Date.now()
+  );
+  const justCompleted = Boolean(activeQuest) && activeQuest?.id === completedQuestId && completeQuestMutation.isSuccess;
+
+  const handleComplete = () => {
+    if (!activeQuest) return;
+    completeQuestMutation.mutate(activeQuest.id, {
+      onSuccess: () => setCompletedQuestId(activeQuest.id),
+    });
   };
 
   return (
@@ -1589,79 +2168,91 @@ function QuestView({ onBack }: { onBack: () => void }) {
             <ChevronLeft size={16} color="#B7BAC3" />
           </button>
           <div>
-            <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC]">Quest Log</h1>
-            <p className="orda-inter text-sm text-[#B7BAC3] mt-1">Choose your path wisely — history remembers every decision</p>
+            <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC]">{t("quests.title")}</h1>
+            <p className="orda-inter text-sm text-[#B7BAC3] mt-1">{t("quests.subtitle")}</p>
           </div>
         </div>
 
         {/* Quest list */}
         <div className="grid grid-cols-1 gap-3 mb-8">
-          {QUESTS.map((q) => (
-            <div key={q.id} onClick={() => { setActiveQuest(q); setChosen(null); }}
-              className="rounded-[16px] p-5 cursor-pointer quest-card"
-              style={{
-                background: activeQuest.id === q.id ? "rgba(212,175,55,0.08)" : "rgba(34,38,47,0.4)",
-                border: `1px solid ${activeQuest.id === q.id ? "rgba(212,175,55,0.25)" : "rgba(255,255,255,0.06)"}`,
-              }}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-                    style={{ background: "rgba(212,175,55,0.1)", border: "1px solid rgba(212,175,55,0.2)" }}>
-                    <Zap size={16} color="#D4AF37" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold orda-cinzel text-[#F6F4EC]">{q.title}</div>
-                    <div className="text-[11px] orda-inter text-[#B7BAC3]">{q.city}</div>
-                  </div>
-                </div>
-                <span className="badge-gold">+{q.xp} XP</span>
+          {(isLoading ? Array.from({ length: 4 }) : questItems).map((q, index) => (
+            isLoading || !q ? (
+              <div key={`quest-skeleton-${index}`} className="rounded-[16px] p-5" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div className="h-4 w-32 rounded-full mb-2" style={{ background: "rgba(255,255,255,0.05)" }} />
+                <div className="h-2 w-20 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
               </div>
-            </div>
+            ) : (
+              <div key={q.id} onClick={() => { setActiveQuest(q); setCompletedQuestId(null); }}
+                className="rounded-[16px] p-5 cursor-pointer quest-card"
+                style={{
+                  background: activeQuest?.id === q.id ? "rgba(212,175,55,0.08)" : "rgba(34,38,47,0.4)",
+                  border: `1px solid ${activeQuest?.id === q.id ? "rgba(212,175,55,0.25)" : "rgba(255,255,255,0.06)"}`,
+                }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+                      style={{ background: "rgba(212,175,55,0.1)", border: "1px solid rgba(212,175,55,0.2)" }}>
+                      <Zap size={16} color="#D4AF37" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold orda-cinzel text-[#F6F4EC]">{q.title}</div>
+                      <div className="text-[11px] orda-inter text-[#B7BAC3]">{q.cityName}</div>
+                    </div>
+                  </div>
+                  <span className="badge-gold">+{q.xp_reward} XP</span>
+                </div>
+              </div>
+            )
           ))}
         </div>
 
+        {error && <div className="mb-4 text-sm text-[#B7BAC3]">{t("quests.unableToLoad")}</div>}
         {/* Active Quest */}
         <div className="rounded-[24px] p-8" style={{ background: "rgba(23,26,32,0.8)", border: "1px solid rgba(212,175,55,0.12)" }}>
-          <div className="badge-gold mb-4">ACTIVE QUEST</div>
-          <h2 className="orda-cinzel text-2xl font-bold text-[#F6F4EC] mb-2">{activeQuest.title}</h2>
+          <div className="badge-gold mb-4">{t("quests.activeQuest")}</div>
+          <h2 className="orda-cinzel text-2xl font-bold text-[#F6F4EC] mb-2">{activeQuestUi?.title || t("quests.selectQuest")}</h2>
           <div className="flex items-center gap-2 mb-6">
             <MapPin size={12} color="#D4AF37" />
-            <span className="text-sm orda-inter text-[#B7BAC3]">{activeQuest.city}</span>
+            <span className="text-sm orda-inter text-[#B7BAC3]">{activeQuestUi?.city || ""}</span>
           </div>
-          <p className="orda-cormorant text-xl italic text-[#F6F4EC] leading-relaxed mb-8">{activeQuest.description}</p>
+          <p className="orda-cormorant text-xl italic text-[#F6F4EC] leading-relaxed mb-8">{activeQuestUi?.description || t("quests.chooseQuestPrompt")}</p>
 
-          {!chosen ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {(["A", "B"] as const).map((opt) => (
-                <button key={opt} onClick={() => setChosen(opt)}
-                  className="p-5 rounded-[16px] text-left transition-all card-hover gold-hover"
-                  style={{ background: "rgba(34,38,47,0.6)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center mb-3"
-                    style={{ background: "rgba(212,175,55,0.12)", border: "1px solid rgba(212,175,55,0.2)" }}>
-                    <span className="text-xs font-bold orda-cinzel text-[#D4AF37]">{opt}</span>
-                  </div>
-                  <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed">
-                    {choices[activeQuest.id as keyof typeof choices]?.[opt]}
-                  </p>
-                </button>
-              ))}
-            </div>
-          ) : (
+          {!activeQuest ? null : justCompleted ? (
             <div className="animate-scale-in rounded-[16px] p-6 text-center"
               style={{ background: "rgba(111,207,151,0.06)", border: "1px solid rgba(111,207,151,0.2)" }}>
               <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4"
                 style={{ background: "rgba(111,207,151,0.15)" }}>
                 <Check size={22} color="#6FCF97" />
               </div>
-              <div className="text-[#6FCF97] text-sm orda-cinzel tracking-widest mb-2">CHOICE RECORDED</div>
-              <p className="orda-inter text-sm text-[#B7BAC3] mb-4">
-                Option {chosen}: {choices[activeQuest.id as keyof typeof choices]?.[chosen]}
-              </p>
+              <div className="text-[#6FCF97] text-sm orda-cinzel tracking-widest mb-2">{t("quests.questComplete")}</div>
               <div className="flex items-center justify-center gap-4">
-                <span className="badge-green">+{activeQuest.xp} XP</span>
-                <span className="badge-gold">+1 Quest Complete</span>
+                <span className="badge-green">+{completeQuestMutation.data?.xp_gained ?? activeQuestUi?.xp ?? 0} XP</span>
+                <span className="badge-gold">+{completeQuestMutation.data?.coins_gained ?? 0} {t("passport.coins")}</span>
               </div>
             </div>
+          ) : isOnCooldown ? (
+            <div className="rounded-[16px] p-6 text-center"
+              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="text-[#B7BAC3] text-sm orda-cinzel tracking-widest mb-2">{t("quests.onCooldown")}</div>
+              <p className="orda-inter text-xs text-[#B7BAC3]">
+                {activeQuest.cooldown_until
+                  ? t("quests.availableAgain", { date: new Date(activeQuest.cooldown_until).toLocaleString() })
+                  : t("quests.checkBackLater")}
+              </p>
+            </div>
+          ) : (
+            <>
+              <button onClick={handleComplete} disabled={completeQuestMutation.isPending}
+                className="btn-primary w-full flex items-center justify-center gap-2"
+                style={{ opacity: completeQuestMutation.isPending ? 0.7 : 1 }}>
+                <Zap size={16} /> {completeQuestMutation.isPending ? t("quests.completing") : t("quests.completeQuest")}
+              </button>
+              {completeQuestMutation.isError && (
+                <p className="mt-3 text-xs text-center orda-inter" style={{ color: "#E5484D" }}>
+                  {(completeQuestMutation.error as Error).message}
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1671,7 +2262,21 @@ function QuestView({ onBack }: { onBack: () => void }) {
 
 // ─── CERTIFICATE ──────────────────────────────────────────────────────────────
 function Certificate({ character, onBack }: { character: CharType; onBack: () => void }) {
-  const char = CHARACTER_DATA[character];
+  const { t } = useTranslation();
+  const { certificatesQuery, issueCertificateMutation } = useCertificates();
+  const { data: citiesData } = useCities();
+  const { data: questsData } = useQuests();
+  const { summaryQuery } = useProgress();
+  const char = getCharacterData(t)[character];
+  const certificate = certificatesQuery.data?.[0];
+
+  const records = summaryQuery.data?.records;
+  const citiesTotal = citiesData?.data.length ?? 0;
+  const citiesVisited = countCompletedByType(records, "city");
+  const artifactsCollected = countCompletedByType(records, "artifact");
+  const questsCompleted = countCompletedByType(records, "quest");
+  const totalQuests = questsData?.meta.total ?? 0;
+
   const confettiPieces = Array.from({ length: 40 }, (_, i) => ({
     id: i,
     left: Math.random() * 100,
@@ -1699,10 +2304,17 @@ function Certificate({ character, onBack }: { character: CharType; onBack: () =>
       ))}
 
       <div className="animate-scale-in text-center mb-8">
-        <div className="badge-gold mb-4 inline-block">JOURNEY COMPLETE</div>
-        <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC] mb-2">Certificate of Excellence</h1>
-        <p className="orda-inter text-sm text-[#B7BAC3]">Your mastery of Golden Horde history has been verified</p>
+        <div className="badge-gold mb-4 inline-block">{t("certificate.journeyComplete")}</div>
+        <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC] mb-2">{t("certificate.title")}</h1>
+        <p className="orda-inter text-sm text-[#B7BAC3]">{t("certificate.subtitle")}</p>
       </div>
+
+      {certificatesQuery.isLoading && (
+        <p className="text-sm text-[#B7BAC3] orda-inter mb-4">{t("certificate.loading")}</p>
+      )}
+      {certificatesQuery.error && (
+        <p className="text-sm text-[#B7BAC3] orda-inter mb-4">{t("certificate.unableToLoad")}</p>
+      )}
 
       {/* Certificate */}
       <div className="certificate-frame rounded-[24px] max-w-2xl w-full animate-scale-in"
@@ -1723,29 +2335,29 @@ function Certificate({ character, onBack }: { character: CharType; onBack: () =>
               style={{ background: "linear-gradient(135deg,rgba(212,175,55,0.15),rgba(212,175,55,0.05))", border: "1px solid rgba(212,175,55,0.25)" }}>
               <span className="text-2xl">⚜</span>
             </div>
-            <div className="text-[#D4AF37] text-[10px] tracking-[0.4em] orda-cinzel mb-1">ORDA ACADEMY</div>
+            <div className="text-[#D4AF37] text-[10px] tracking-[0.4em] orda-cinzel mb-1">{t("certificate.academyName")}</div>
             <div className="w-32 h-px mx-auto" style={{ background: "linear-gradient(90deg,transparent,rgba(212,175,55,0.4),transparent)" }} />
           </div>
 
           {/* Certificate body */}
           <div className="text-center space-y-4">
-            <p className="orda-cormorant text-lg italic text-[#B7BAC3]">This certifies that</p>
+            <p className="orda-cormorant text-lg italic text-[#B7BAC3]">{t("certificate.thisCertifies")}</p>
             <div className="py-4 border-b border-t" style={{ borderColor: "rgba(212,175,55,0.12)" }}>
-              <h2 className="orda-cinzel text-4xl font-bold text-[#D4AF37]">Brave Explorer</h2>
+              <h2 className="orda-cinzel text-4xl font-bold text-[#D4AF37]">{certificate?.title || t("certificate.defaultTitle")}</h2>
             </div>
-            <p className="orda-cormorant text-lg italic text-[#B7BAC3]">has completed the journey as</p>
+            <p className="orda-cormorant text-lg italic text-[#B7BAC3]">{t("certificate.hasCompleted")}</p>
             <div className="flex items-center justify-center gap-3">
               <char.icon size={20} color={char.color} />
-              <span className="orda-cinzel text-xl text-[#F6F4EC]">{char.name} of the Golden Horde</span>
+              <span className="orda-cinzel text-xl text-[#F6F4EC]">{t("certificate.characterOf", { name: char.name })}</span>
             </div>
             <p className="orda-cormorant text-base italic text-[#B7BAC3] max-w-sm mx-auto leading-relaxed">
-              Having traversed the Great Steppe, explored the cities of the Altan Orda, and conversed with the Oracle of Ages.
+              {t("certificate.traversed")}
             </p>
           </div>
 
           {/* Stats row */}
           <div className="grid grid-cols-3 gap-4 mt-8 pt-8 border-t" style={{ borderColor: "rgba(212,175,55,0.08)" }}>
-            {[["6/6", "Cities"], ["8", "Artifacts"], ["12", "Quests"]].map(([v, l]) => (
+            {[[`${citiesVisited}/${citiesTotal}`, t("certificate.cities")], [`${artifactsCollected}`, t("certificate.artifacts")], [`${questsCompleted}/${totalQuests}`, t("certificate.quests")]].map(([v, l]) => (
               <div key={l} className="text-center">
                 <div className="text-xl font-bold orda-cinzel text-[#D4AF37]">{v}</div>
                 <div className="text-xs orda-inter text-[#B7BAC3]">{l}</div>
@@ -1756,28 +2368,483 @@ function Certificate({ character, onBack }: { character: CharType; onBack: () =>
           {/* Footer */}
           <div className="mt-8 flex items-center justify-between">
             <div>
-              <div className="text-[10px] orda-cinzel tracking-widest text-[#B7BAC3]">ISSUED BY</div>
-              <div className="text-sm orda-cinzel text-[#D4AF37]">ORDA AI Academy</div>
+              <div className="text-[10px] orda-cinzel tracking-widest text-[#B7BAC3]">{t("certificate.issuedBy")}</div>
+              <div className="text-sm orda-cinzel text-[#D4AF37]">{t("certificate.academyName")}</div>
             </div>
             <div className="text-right">
-              <div className="text-[10px] orda-cinzel tracking-widest text-[#B7BAC3]">DATE</div>
-              <div className="text-sm orda-cinzel text-[#D4AF37]">2025 CE</div>
+              <div className="text-[10px] orda-cinzel tracking-widest text-[#B7BAC3]">{t("certificate.date")}</div>
+              <div className="text-sm orda-cinzel text-[#D4AF37]">
+                {certificate ? new Date(certificate.issued_at).toLocaleDateString() : t("certificate.notYetIssued")}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex gap-4 mt-8 animate-slide-up" style={{ animationDelay: "0.5s" }}>
-        <button className="btn-primary flex items-center gap-2">
-          <Download size={16} /> Download PDF
-        </button>
-        <button className="btn-ghost flex items-center gap-2">
-          <Share2 size={16} /> Share Achievement
-        </button>
-        <button onClick={onBack} className="btn-ghost">
-          Back to Journey
-        </button>
+      <div className="flex flex-col items-center gap-3 mt-8 animate-slide-up" style={{ animationDelay: "0.5s" }}>
+        <div className="flex gap-4">
+          <button onClick={() => issueCertificateMutation.mutate({ title: t("certificate.issueTitle") })}
+            disabled={issueCertificateMutation.isPending}
+            className="btn-primary flex items-center gap-2" style={{ opacity: issueCertificateMutation.isPending ? 0.7 : 1 }}>
+            <Download size={16} /> {issueCertificateMutation.isPending ? t("certificate.issuing") : certificate ? t("certificate.reissue") : t("certificate.issue")}
+          </button>
+          <button className="btn-ghost flex items-center gap-2">
+            <Share2 size={16} /> {t("certificate.shareAchievement")}
+          </button>
+          <button onClick={onBack} className="btn-ghost">
+            {t("certificate.backToJourney")}
+          </button>
+        </div>
+        {issueCertificateMutation.isError && (
+          <p className="text-xs orda-inter" style={{ color: "#E5484D" }}>
+            {(issueCertificateMutation.error as Error).message}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── PASSPORT OF THE GREAT STEPPE ─────────────────────────────────────────────
+function describeProgressRecord(
+  t: TFunction,
+  record: ApiProgressSummary["records"][number],
+  cities: City[],
+  artifactsList: ApiArtifact[],
+  questsList: ApiQuest[],
+): string {
+  if (record.entity_type === "city") {
+    return t("passport.timelineVisited", { name: cities.find(c => c.id === record.entity_id)?.name ?? t("passport.aCity") });
+  }
+  if (record.entity_type === "artifact") {
+    return t("passport.timelineCollected", { name: artifactsList.find(a => a.id === record.entity_id)?.name ?? t("passport.anArtifact") });
+  }
+  if (record.entity_type === "quest") {
+    return t("passport.timelineCompleted", { name: questsList.find(q => q.id === record.entity_id)?.title ?? t("passport.aQuest") });
+  }
+  return t("passport.timelineProgress");
+}
+
+function Passport({ onBack, onLogout }: { onBack: () => void; onLogout: () => void }) {
+  const { t } = useTranslation();
+  const { user, updateProfileMutation, uploadAvatarMutation, logoutMutation } = useAuthSession();
+  const { data: citiesData } = useCities();
+  const { data: artifactsData } = useArtifacts();
+  const { data: questsData } = useQuests();
+  const { summaryQuery, statsQuery, achievementsQuery } = useProgress();
+  const { certificatesQuery } = useCertificates();
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const [fullName, setFullName] = useState("");
+  const [bio, setBio] = useState("");
+
+  useEffect(() => {
+    if (user) {
+      setFullName(user.full_name ?? "");
+      setBio(user.bio ?? "");
+    }
+  }, [user?.id]);
+
+  const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
+  const artifactsList = artifactsData?.data || [];
+  const questsList = questsData?.data || [];
+  const stats = statsQuery.data;
+  const summary = summaryQuery.data;
+  const records = summary?.records || [];
+  const achievements = achievementsQuery.data || [];
+  const certificates = certificatesQuery.data || [];
+
+  const citiesVisited = countCompletedByType(records, "city");
+  const artifactsCollected = countCompletedByType(records, "artifact");
+  const questsCompleted = countCompletedByType(records, "quest");
+
+  const timeline = records
+    .filter(r => r.completed_at)
+    .slice()
+    .sort((a, b) => new Date(b.completed_at as string).getTime() - new Date(a.completed_at as string).getTime())
+    .slice(0, 10);
+
+  const saveSettings = (e: FormEvent) => {
+    e.preventDefault();
+    updateProfileMutation.mutate({ full_name: fullName || null, bio: bio || null });
+  };
+
+  const handleAvatarChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) uploadAvatarMutation.mutate(file);
+    e.target.value = "";
+  };
+
+  return (
+    <div className="min-h-screen pt-16 pb-16 animate-fade-in" style={{ background: "#0F1115" }}>
+      <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-10">
+        <div className="flex items-center gap-4 mb-10">
+          <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/5 transition-colors"
+            style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
+            <ChevronLeft size={16} color="#B7BAC3" />
+          </button>
+          <div>
+            <div className="badge-gold mb-2 inline-block">{t("passport.officialDocument")}</div>
+            <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC]">{t("passport.title")}</h1>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left column — identity */}
+          <div className="space-y-6">
+            <div className="certificate-frame rounded-[24px] p-7 text-center"
+              style={{ background: "linear-gradient(135deg, #171A20 0%, #1A1C14 50%, #171A20 100%)" }}>
+              <div className="relative w-24 h-24 mx-auto mb-4">
+                <div className="w-24 h-24 rounded-full overflow-hidden flex items-center justify-center text-3xl font-bold orda-cinzel"
+                  style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)", color: "#0F1115" }}>
+                  {user?.avatar_url ? (
+                    <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    (user?.username?.[0] || "?").toUpperCase()
+                  )}
+                </div>
+                <button onClick={() => avatarInputRef.current?.click()} disabled={uploadAvatarMutation.isPending}
+                  className="absolute bottom-0 right-0 w-8 h-8 rounded-full flex items-center justify-center"
+                  style={{ background: "#22262F", border: "2px solid #0F1115" }}>
+                  <Camera size={13} color="#D4AF37" />
+                </button>
+                <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+              </div>
+              <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC]">{user?.username || "…"}</h2>
+              <div className="badge-gold mt-2 inline-block">{stats?.title || t("passport.defaultTitle")}</div>
+              <div className="mt-4 pt-4 border-t space-y-2" style={{ borderColor: "rgba(212,175,55,0.1)" }}>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[#B7BAC3] orda-inter">{t("passport.registered")}</span>
+                  <span className="text-[#F6F4EC] orda-inter">{user ? new Date(user.created_at).toLocaleDateString() : "—"}</span>
+                </div>
+                {uploadAvatarMutation.isError && (
+                  <p className="text-[11px] orda-inter" style={{ color: "#E5484D" }}>
+                    {(uploadAvatarMutation.error as Error).message}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Language */}
+            <div className="rounded-[16px] p-5" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="flex items-center gap-2 mb-3">
+                <Globe size={14} color="#D4AF37" />
+                <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">{t("passport.language")}</span>
+              </div>
+              <select
+                value={user?.language || DEFAULT_LANGUAGE}
+                onChange={(e) => updateProfileMutation.mutate({ language: e.target.value as ApiLanguage })}
+                className="input-field"
+                style={{ appearance: "auto" }}>
+                {SUPPORTED_LANGUAGES.map((code) => (
+                  <option key={code} value={code} style={{ background: "#171A20" }}>{t(`language.${code}`)}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Settings */}
+            <div className="rounded-[16px] p-5" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="flex items-center gap-2 mb-4">
+                <Settings size={14} color="#D4AF37" />
+                <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">{t("passport.settings")}</span>
+              </div>
+              <form onSubmit={saveSettings} className="space-y-3">
+                <input className="input-field" type="text" placeholder={t("passport.fullNamePlaceholder")} value={fullName}
+                  onChange={(e) => setFullName(e.target.value)} />
+                <textarea className="input-field resize-none" rows={3} placeholder={t("passport.bioPlaceholder")} value={bio}
+                  onChange={(e) => setBio(e.target.value)} />
+                {updateProfileMutation.isError && (
+                  <p className="text-[11px] orda-inter" style={{ color: "#E5484D" }}>
+                    {(updateProfileMutation.error as Error).message}
+                  </p>
+                )}
+                <button type="submit" disabled={updateProfileMutation.isPending}
+                  className="btn-primary w-full text-sm py-2.5"
+                  style={{ opacity: updateProfileMutation.isPending ? 0.7 : 1 }}>
+                  {updateProfileMutation.isPending ? t("common.saving") : t("common.save")}
+                </button>
+              </form>
+            </div>
+
+            <button
+              onClick={() => logoutMutation.mutate(undefined, { onSuccess: onLogout })}
+              disabled={logoutMutation.isPending}
+              className="btn-ghost w-full flex items-center justify-center gap-2 text-sm">
+              <LogOut size={15} /> {logoutMutation.isPending ? t("passport.signingOut") : t("passport.logout")}
+            </button>
+          </div>
+
+          {/* Right column — progression & history */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Stat tiles */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[
+                [t("passport.level"), stats?.level ?? "—"],
+                [t("passport.xp"), stats?.xp ?? "—"],
+                [t("passport.coins"), stats?.coins ?? "—"],
+                [t("passport.dailyStreak"), stats?.streak_days ?? "—"],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-[16px] p-4 text-center" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div className="text-xl font-bold orda-cinzel text-[#D4AF37]">{value}</div>
+                  <div className="text-[10px] orda-inter text-[#B7BAC3] mt-1">{label}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                [t("passport.visitedCities"), `${citiesVisited}/${cities.length}`, MapPin],
+                [t("passport.completedQuests"), `${questsCompleted}/${questsList.length}`, Zap],
+                [t("passport.collectedArtifacts"), `${artifactsCollected}/${artifactsList.length}`, Package],
+              ].map(([label, value, Icon]) => (
+                <div key={label as string} className="rounded-[16px] p-4 text-center" style={{ background: "rgba(212,175,55,0.04)", border: "1px solid rgba(212,175,55,0.1)" }}>
+                  {typeof Icon !== "string" && <Icon size={16} color="#D4AF37" className="mx-auto mb-2" />}
+                  <div className="text-lg font-bold orda-cinzel text-[#F6F4EC]">{value as string}</div>
+                  <div className="text-[10px] orda-inter text-[#B7BAC3] mt-1">{label as string}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Achievements */}
+            <div className="rounded-[20px] p-6" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="flex items-center gap-2 mb-4">
+                <Award size={16} color="#D4AF37" />
+                <h2 className="orda-cinzel text-sm font-semibold text-[#F6F4EC] tracking-wider">{t("passport.achievements")}</h2>
+              </div>
+              {achievementsQuery.isLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <div key={i} className="h-14 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }} />
+                  ))}
+                </div>
+              ) : achievements.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {achievements.map((achievement) => (
+                    <div key={achievement.id} className="flex items-center gap-3 p-3 rounded-xl"
+                      style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.1)" }}>
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                        style={{ background: "rgba(212,175,55,0.15)" }}>
+                        <Check size={15} color="#D4AF37" />
+                      </div>
+                      <div>
+                        <div className="text-xs orda-cinzel text-[#F6F4EC]">{achievement.title}</div>
+                        <div className="text-[10px] orda-inter text-[#B7BAC3]">{achievement.description}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs orda-inter text-[#B7BAC3]">{t("passport.noAchievements")}</p>
+              )}
+            </div>
+
+            {/* Certificates */}
+            <div className="rounded-[20px] p-6" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="flex items-center gap-2 mb-4">
+                <BookOpen size={16} color="#D4AF37" />
+                <h2 className="orda-cinzel text-sm font-semibold text-[#F6F4EC] tracking-wider">{t("passport.certificates")}</h2>
+              </div>
+              {certificatesQuery.isLoading ? (
+                <div className="h-14 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }} />
+              ) : certificates.length > 0 ? (
+                <div className="space-y-2">
+                  {certificates.map((certificate) => (
+                    <div key={certificate.id} className="flex items-center justify-between p-3 rounded-xl"
+                      style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.1)" }}>
+                      <div>
+                        <div className="text-xs orda-cinzel text-[#F6F4EC]">{certificate.title}</div>
+                        <div className="text-[10px] orda-inter text-[#B7BAC3]">{new Date(certificate.issued_at).toLocaleDateString()}</div>
+                      </div>
+                      <span className="badge-gold">{certificate.completion_percent}%</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs orda-inter text-[#B7BAC3]">{t("passport.noCertificates")}</p>
+              )}
+            </div>
+
+            {/* Journey Timeline */}
+            <div className="rounded-[20px] p-6" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="flex items-center gap-2 mb-4">
+                <Clock size={16} color="#D4AF37" />
+                <h2 className="orda-cinzel text-sm font-semibold text-[#F6F4EC] tracking-wider">{t("passport.journeyTimeline")}</h2>
+              </div>
+              {summaryQuery.isLoading ? (
+                <div className="h-14 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }} />
+              ) : timeline.length > 0 ? (
+                <div className="relative">
+                  <div className="absolute left-[5px] top-1 bottom-1 w-px" style={{ background: "rgba(212,175,55,0.2)" }} />
+                  <div className="space-y-4">
+                    {timeline.map((record) => (
+                      <div key={record.id} className="flex items-start gap-4 pl-0">
+                        <div className="w-[11px] h-[11px] rounded-full mt-1 flex-shrink-0" style={{ background: "#D4AF37" }} />
+                        <div>
+                          <p className="text-xs orda-inter text-[#F6F4EC]">{describeProgressRecord(t, record, cities, artifactsList, questsList)}</p>
+                          <p className="text-[10px] orda-inter text-[#B7BAC3]">{new Date(record.completed_at as string).toLocaleString()}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs orda-inter text-[#B7BAC3]">{t("passport.noTimeline")}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MIN_PASSWORD_LENGTH = 8;
+const MIN_USERNAME_LENGTH = 3;
+
+interface AuthFormErrors {
+  email?: string;
+  username?: string;
+  password?: string;
+}
+
+function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
+  const { t } = useTranslation();
+  const { loginMutation, registerMutation } = useAuthSession();
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
+  const [errors, setErrors] = useState<AuthFormErrors>({});
+  const [success, setSuccess] = useState(false);
+
+  const activeMutation = mode === "login" ? loginMutation : registerMutation;
+
+  const validate = (): boolean => {
+    const nextErrors: AuthFormErrors = {};
+    if (!EMAIL_PATTERN.test(email)) {
+      nextErrors.email = t("auth.errors.emailInvalid");
+    }
+    if (mode === "register" && username.trim().length < MIN_USERNAME_LENGTH) {
+      nextErrors.username = t("auth.errors.usernameTooShort", { count: MIN_USERNAME_LENGTH });
+    }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      nextErrors.password = t("auth.errors.passwordTooShort", { count: MIN_PASSWORD_LENGTH });
+    }
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    try {
+      if (mode === "login") {
+        await loginMutation.mutateAsync({ email, password, rememberMe });
+      } else {
+        await registerMutation.mutateAsync({ email, username, password, full_name: fullName || undefined });
+      }
+      setSuccess(true);
+    } catch {
+      // surfaced via activeMutation.error below
+    }
+  };
+
+  useEffect(() => {
+    if (!success) return;
+    const timer = setTimeout(onAuthenticated, 900);
+    return () => clearTimeout(timer);
+  }, [success, onAuthenticated]);
+
+  return (
+    <div className="min-h-screen pt-16 flex items-center justify-center px-4 animate-fade-in"
+      style={{ background: "radial-gradient(ellipse at top, rgba(212,175,55,0.04) 0%, #0F1115 60%)" }}>
+      <div className="max-w-md w-full glass-dark rounded-[24px] p-8 animate-scale-in">
+        {success ? (
+          <div className="animate-scale-in text-center py-6">
+            <div className="w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center"
+              style={{ background: "rgba(111,207,151,0.15)" }}>
+              <Check size={26} color="#6FCF97" />
+            </div>
+            <div className="text-[#6FCF97] text-sm orda-cinzel tracking-widest mb-2">
+              {mode === "login" ? t("auth.welcomeBackShort") : t("auth.accountCreated")}
+            </div>
+            <p className="orda-inter text-sm text-[#B7BAC3]">{t("auth.enteringSteppe")}</p>
+          </div>
+        ) : (
+          <>
+            <div className="text-center mb-8">
+              <div className="w-14 h-14 mx-auto mb-4 rounded-2xl flex items-center justify-center"
+                style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)" }}>
+                <span className="text-[#0F1115] font-bold text-xl orda-cinzel">O</span>
+              </div>
+              <h1 className="orda-cinzel text-2xl font-bold text-[#F6F4EC] mb-2">
+                {mode === "login" ? t("auth.welcomeBack") : t("auth.joinJourney")}
+              </h1>
+              <p className="orda-inter text-sm text-[#B7BAC3]">
+                {mode === "login" ? t("auth.signInSubtitle") : t("auth.registerSubtitle")}
+              </p>
+            </div>
+
+            <div className="flex gap-2 mb-6 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }}>
+              {(["login", "register"] as const).map((m) => (
+                <button key={m} type="button" onClick={() => { setMode(m); setErrors({}); }}
+                  className="flex-1 py-2 rounded-lg text-xs orda-cinzel tracking-widest transition-all"
+                  style={{ background: mode === m ? "rgba(212,175,55,0.15)" : "transparent", color: mode === m ? "#D4AF37" : "#B7BAC3" }}>
+                  {m === "login" ? t("auth.signIn") : t("auth.register")}
+                </button>
+              ))}
+            </div>
+
+            <form onSubmit={submit} className="space-y-4" noValidate>
+              <div>
+                <input className="input-field" type="email" placeholder={t("auth.email")} value={email}
+                  onChange={(e) => setEmail(e.target.value)} />
+                {errors.email && <p className="mt-1.5 text-xs orda-inter" style={{ color: "#E5484D" }}>{errors.email}</p>}
+              </div>
+              {mode === "register" && (
+                <>
+                  <div>
+                    <input className="input-field" type="text" placeholder={t("auth.username")} value={username}
+                      onChange={(e) => setUsername(e.target.value)} />
+                    {errors.username && <p className="mt-1.5 text-xs orda-inter" style={{ color: "#E5484D" }}>{errors.username}</p>}
+                  </div>
+                  <input className="input-field" type="text" placeholder={t("auth.fullNameOptional")} value={fullName}
+                    onChange={(e) => setFullName(e.target.value)} />
+                </>
+              )}
+              <div>
+                <input className="input-field" type="password" placeholder={t("auth.password")} value={password}
+                  onChange={(e) => setPassword(e.target.value)} />
+                {errors.password && <p className="mt-1.5 text-xs orda-inter" style={{ color: "#E5484D" }}>{errors.password}</p>}
+              </div>
+
+              {mode === "login" && (
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded" style={{ accentColor: "#D4AF37" }} />
+                  <span className="text-xs orda-inter text-[#B7BAC3]">{t("auth.rememberMe")}</span>
+                </label>
+              )}
+
+              {activeMutation.error && (
+                <p className="text-xs text-center orda-inter" style={{ color: "#E5484D" }}>
+                  {(activeMutation.error as Error).message}
+                </p>
+              )}
+
+              <button type="submit" disabled={activeMutation.isPending}
+                className="btn-primary w-full flex items-center justify-center gap-2"
+                style={{ opacity: activeMutation.isPending ? 0.7 : 1 }}>
+                {activeMutation.isPending ? t("auth.pleaseWait") : mode === "login" ? t("auth.signIn") : t("auth.createAccount")}
+              </button>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1785,6 +2852,8 @@ function Certificate({ character, onBack }: { character: CharType; onBack: () =>
 
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
+  const { i18n } = useTranslation();
+  const { isAuthenticated, user } = useAuthSession();
   const [view, setView] = useState<View>("landing");
   const [character, setCharacter] = useState<CharType>("explorer");
   const [selectedCity, setSelectedCity] = useState<City | null>(null);
@@ -1792,11 +2861,26 @@ export default function App() {
   const [key, setKey] = useState(0);
 
   const navigate = (v: View) => {
+    const resolved = resolveView(v, isAuthenticated, user?.role ?? null);
     setPrevView(view);
-    setView(v);
+    setView(resolved);
     setKey(k => k + 1);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  // If a session expires (or refresh fails) while on a protected view, drop back to auth.
+  useEffect(() => {
+    if (PROTECTED_VIEWS.includes(view) && !isAuthenticated) {
+      navigate("auth");
+    }
+  }, [isAuthenticated]);
+
+  // Honor the account's saved language preference (e.g. after signing in on a new device).
+  useEffect(() => {
+    if (user?.language && user.language !== i18n.resolvedLanguage) {
+      i18n.changeLanguage(user.language);
+    }
+  }, [user?.language]);
 
   const handleCharSelect = (c: CharType) => {
     setCharacter(c);
@@ -1820,7 +2904,10 @@ export default function App() {
 
       <div key={key} className="view-enter">
         {view === "landing" && (
-          <Landing onStart={() => navigate("chars")} />
+          <>
+            <Landing onStart={() => navigate("chars")} />
+            <LandingStory onStart={() => navigate("chars")} />
+          </>
         )}
         {view === "chars" && (
           <div className="min-h-screen pt-16" style={{ background: "radial-gradient(ellipse at top, rgba(212,175,55,0.04) 0%, #0F1115 60%)" }}>
@@ -1829,6 +2916,9 @@ export default function App() {
         )}
         {view === "intro" && (
           <StoryIntro character={character} onBegin={() => navigate("dashboard")} />
+        )}
+        {view === "auth" && (
+          <AuthGate onAuthenticated={() => navigate("dashboard")} />
         )}
         {view === "dashboard" && (
           <Dashboard character={character} onSelectCity={handleCitySelect} onNav={navigate} />
@@ -1847,6 +2937,9 @@ export default function App() {
         )}
         {view === "certificate" && (
           <Certificate character={character} onBack={() => navigate("dashboard")} />
+        )}
+        {view === "passport" && (
+          <Passport onBack={() => navigate("dashboard")} onLogout={() => navigate("landing")} />
         )}
       </div>
     </div>

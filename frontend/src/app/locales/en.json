@@ -1,0 +1,426 @@
+{
+  "common": {
+    "back": "Back",
+    "loading": "Loading…",
+    "errorGeneric": "Something went wrong. Please try again.",
+    "saving": "Saving…",
+    "save": "Save Changes",
+    "seeAll": "See all",
+    "unknown": "Unknown",
+    "historicalCategory": "Historical",
+    "recoveredInField": "Recovered in the field",
+    "rarity": {
+      "legendary": "LEGENDARY",
+      "rare": "RARE",
+      "common": "COMMON"
+    }
+  },
+  "nav": {
+    "journey": "Journey",
+    "map": "Map",
+    "artifacts": "Artifacts",
+    "aiHistorian": "AI Historian",
+    "about": "About",
+    "enter": "Enter",
+    "passport": "Passport"
+  },
+  "hero": {
+    "tagline": "AI Historical Journey",
+    "description": "Discover ancient cities, talk to an AI historian, complete interactive quests and become a true explorer of the Great Steppe.",
+    "startJourney": "Start Journey",
+    "watchDemo": "Watch Demo",
+    "scroll": "SCROLL",
+    "features": {
+      "cities": "6 Cities",
+      "quests": "200+ Quests",
+      "aiHistorian": "AI Historian",
+      "artifacts": "3D Artifacts"
+    }
+  },
+  "journey": {
+    "badge": "THE JOURNEY BEGINS",
+    "title1": "Step Into an Empire",
+    "title2": "Lost to Time",
+    "description": "From the golden domes of Sarai to the caravanserais of the Silk Road, the Great Steppe holds centuries of forgotten history. ORDA guides you through it — one city, one quest, one conversation at a time.",
+    "pillars": {
+      "explore": {
+        "title": "Explore",
+        "text": "Wander historical capitals rendered from primary sources."
+      },
+      "converse": {
+        "title": "Converse",
+        "text": "Ask the AI Historian anything — every answer is grounded in verified scholarship."
+      },
+      "quest": {
+        "title": "Quest",
+        "text": "Live pivotal moments in history and shape their outcome."
+      }
+    }
+  },
+  "timeline": {
+    "badge": "800+ YEARS OF HISTORY",
+    "title": "A Timeline Carved in the Steppe",
+    "events": [
+      {
+        "year": "1206",
+        "text": "Genghis Khan unites the Mongol tribes, laying the foundation for the largest contiguous land empire in history."
+      },
+      {
+        "year": "1224",
+        "text": "The Jochi Ulus is established on the western steppe — the seed from which the Golden Horde will grow."
+      },
+      {
+        "year": "1242",
+        "text": "Batu Khan founds Sarai on the Volga, choosing it as the new capital of the western Mongol realm."
+      },
+      {
+        "year": "1313",
+        "text": "Khan Özbeg converts the Horde to Islam, reshaping its law, architecture, and place in the Muslim world."
+      },
+      {
+        "year": "1395",
+        "text": "Timur's invasion devastates Sarai and the Horde's great cities — a wound the empire never fully recovers from."
+      },
+      {
+        "year": "1502",
+        "text": "The Great Horde falls, its territories fracturing into the khanates that would shape Eurasia for centuries."
+      }
+    ]
+  },
+  "mapPreview": {
+    "badge": "GOLDEN HORDE TERRITORY",
+    "title": "Walk the Map of an Empire",
+    "description": "Historical capitals rendered on an interactive map of the 13th–15th century Steppe. Hover a city to preview its story."
+  },
+  "citiesPreview": {
+    "badge": "ANCIENT CITIES",
+    "title": "Cities That Ruled the Silk Road"
+  },
+  "aiPreview": {
+    "badge": "AI HISTORIAN",
+    "title": "Ask the Oracle of Ages",
+    "description": "Every answer is retrieved from verified historical sources — never invented. Ask about khans, trade routes, sieges, or daily life in Sarai, in Kazakh, Russian, or English.",
+    "cta": "Talk to the Historian",
+    "sampleQuestion": "Why did Khan Berke convert to Islam?",
+    "sampleAnswer": "Berke's conversion around 1252 secured alliances with the Mamluks of Egypt and gave the Horde religious legitimacy across its Muslim trade partners on the Silk Road."
+  },
+  "artifactsPreview": {
+    "badge": "ARTIFACT COLLECTION",
+    "title": "Relics of the Great Steppe"
+  },
+  "adventure": {
+    "badge": "THE ADVENTURE",
+    "title": "Every Choice Shapes Your Legacy",
+    "description": "Complete quests to earn XP and coins, rise through historical titles, unlock achievements, and walk away with a certificate of your journey.",
+    "items": {
+      "quests": {
+        "title": "Complete Quests",
+        "text": "Live pivotal historical dilemmas and earn rewards."
+      },
+      "rank": {
+        "title": "Rise in Rank",
+        "text": "Progress from Beginner to Keeper of History."
+      },
+      "achievements": {
+        "title": "Unlock Achievements",
+        "text": "Earn badges for exploration, scholarship, and mastery."
+      },
+      "certificate": {
+        "title": "Earn a Certificate",
+        "text": "Walk away with proof of your completed journey."
+      }
+    }
+  },
+  "stats": {
+    "cities": "Historical Cities",
+    "artifacts": "Artifacts to Discover",
+    "quests": "Interactive Quests",
+    "years": "Years Since the Mongol Empire Began"
+  },
+  "finalCta": {
+    "title": "Your Journey Through the Great Steppe Awaits",
+    "description": "Explore ancient cities, hundreds of quests, and an AI historian who never stops learning. Begin your passport today.",
+    "cta": "Start Your Journey"
+  },
+  "footer": {
+    "links": {
+      "journey": "Journey",
+      "cities": "Cities",
+      "aiHistorian": "AI Historian",
+      "artifacts": "Artifacts"
+    },
+    "copyright": "© {{year}} ORDA — AI Historical Journey. All rights reserved.",
+    "subtitle": "Altyn Orda · Altan Orda · The Golden Horde"
+  },
+  "chars": {
+    "badge": "CHAPTER I",
+    "title": "Choose Your Path",
+    "description": "Your role shapes the journey. Each path reveals a different face of the Golden Horde's magnificent story.",
+    "choose": "Choose {{name}}",
+    "merchant": {
+      "name": "The Merchant",
+      "shortName": "Merchant",
+      "title": "Ibn Battuta's Companion",
+      "description": "Travel the legendary Silk Road. Negotiate in the bazaars of Sarai, forge trade alliances, and amass a fortune that spans three continents.",
+      "traits": [
+        "Resourceful",
+        "Multilingual",
+        "Cunning"
+      ]
+    },
+    "diplomat": {
+      "name": "The Diplomat",
+      "shortName": "Diplomat",
+      "title": "Voice of the Khan",
+      "description": "Navigate the treacherous courts of kings and khans. Craft alliances, decode politics, and shape the destiny of an empire through words, not swords.",
+      "traits": [
+        "Eloquent",
+        "Strategic",
+        "Patient"
+      ]
+    },
+    "explorer": {
+      "name": "The Explorer",
+      "shortName": "Explorer",
+      "title": "Seeker of Lost Cities",
+      "description": "Venture into the unknown. Unearth forgotten ruins, decode ancient scripts, and piece together the true story of the world's greatest steppe empire.",
+      "traits": [
+        "Daring",
+        "Perceptive",
+        "Scholarly"
+      ]
+    }
+  },
+  "intro": {
+    "oracleSpeaks": "— THE ORACLE SPEAKS —",
+    "quote": "The year is XIII century. The Great Steppe awaits. Your journey begins in the capital of the Golden Horde — Sarai Batu, city of ten thousand souls.",
+    "begin": "Begin Adventure",
+    "footer": "The Great Steppe remembers those who dare to explore it.",
+    "youArePrefix": "You are",
+    "youAreSuffix": ""
+  },
+  "map": {
+    "clickToExplore": "Click to explore →",
+    "titleOverlay": "GOLDEN HORDE TERRITORY · XIII–XV CENTURY",
+    "scale": "500 km",
+    "citySubtitles": {
+      "sarai-batu": "Capital of the Golden Horde",
+      "sarayshyk": "Gateway to Central Asia",
+      "otrar": "City That Changed History",
+      "sygnak": "Throne of the White Horde",
+      "bolgar": "Northern Jewel of the Horde",
+      "kaffa": "Pearl of the Black Sea"
+    }
+  },
+  "dashboard": {
+    "journey": "JOURNEY",
+    "statCities": "Cities",
+    "statArtifacts": "Artifacts",
+    "statQuests": "Quests",
+    "activeQuest": "ACTIVE QUEST",
+    "noQuests": "No quests available right now.",
+    "artifactsLabel": "ARTIFACTS",
+    "achievementsLabel": "ACHIEVEMENTS",
+    "noAchievements": "Complete quests to earn your first achievement.",
+    "interactiveMap": "Interactive Map",
+    "mapSubtitle": "Golden Horde Territory · Select a city to explore",
+    "routes": "Routes",
+    "cities": "Cities",
+    "rivers": "Rivers",
+    "aiTeaserTitle": "AI Historian",
+    "aiTeaserSubtitle": "Ask anything",
+    "aiTeaserQuote": "\"The Golden Horde was arguably the most cosmopolitan empire of the 13th century. Ask me about its trade, politics, or art...\"",
+    "openAiHistorian": "Open AI Historian →",
+    "explorerLevel": "EXPLORER LEVEL",
+    "journeyLabel": "Journey",
+    "questsLabel": "Quests",
+    "level": "Level {{level}}",
+    "xpEarned": "{{xp}} XP earned",
+    "notifications": "NOTIFICATIONS",
+    "notification1": "New quest unlocked in Sarai Batu",
+    "notification2": "Artifact discovered: Golden Jug",
+    "notification3": "AI has new insights about Bolgar",
+    "timeAgo2m": "2m ago",
+    "timeAgo1h": "1h ago",
+    "timeAgo3h": "3h ago",
+    "certificate": "Certificate",
+    "certificateTeaser": "Complete your journey to earn your Explorer certificate"
+  },
+  "city": {
+    "backToMap": "Back to Map",
+    "goldenHordeCity": "GOLDEN HORDE CITY",
+    "quest": "Quest",
+    "talkToAi": "Talk to AI",
+    "tabs": {
+      "overview": "overview",
+      "timeline": "timeline",
+      "gallery": "gallery",
+      "stats": "stats"
+    },
+    "historicalOverview": "Historical Overview",
+    "strategicImportance": "Strategic Importance",
+    "remarkableFacts": "Remarkable Facts",
+    "founded": "Founded",
+    "population": "Population",
+    "era": "Era",
+    "eraValue": "XIII–XV Century",
+    "region": "Region",
+    "regionValue": "Golden Horde Ulus",
+    "cityArtifacts": "CITY ARTIFACTS",
+    "viewAllArtifacts": "View All Artifacts →",
+    "historicalTimeline": "Historical Timeline",
+    "gallery": "Gallery",
+    "historicalView": "Historical View {{index}}",
+    "timelineEvents": {
+      "mongolArrival": "Mongol forces first arrive in the region under Jochi Khan",
+      "settlementEstablished": "{{city}} established as a major Golden Horde settlement",
+      "peakProsperity": "City reaches peak prosperity under Tuda-Mengu Khan",
+      "islamConversion": "Özbeg Khan converts to Islam — city mosques multiply",
+      "timurInvasion": "Timur's invasion devastates the Golden Horde",
+      "dissolution": "Dissolution of the unified Golden Horde begins"
+    },
+    "statsLabels": {
+      "tradeRoutes": "Trade Routes",
+      "tradeRoutesSub": "Connected cities",
+      "mosques": "Mosques",
+      "mosquesSub": "At city's peak",
+      "population2": "Population",
+      "populationSub": "13th century",
+      "languages": "Languages",
+      "languagesSub": "Spoken in markets",
+      "crafts": "Crafts",
+      "craftsSub": "Documented trades",
+      "caravanserais": "Caravanserais",
+      "caravanseraisSub": "Waystation inns",
+      "palaces": "Palaces",
+      "palacesSub": "Royal residences",
+      "centuries": "Centuries",
+      "centuriesSub": "Of Golden Horde rule"
+    }
+  },
+  "aiHistorian": {
+    "title": "ORDA Oracle",
+    "status": "AI Historian · Active",
+    "beta": "BETA",
+    "suggestedQuestions": "SUGGESTED QUESTIONS",
+    "suggestions": [
+      "What was daily life like in Sarai Batu?",
+      "Tell me about Khan Özbeg's conversion to Islam",
+      "How did the Silk Road work under the Golden Horde?",
+      "What happened to the empire after Timur's invasion?"
+    ],
+    "unavailable": "The historian is temporarily unavailable. Please try again in a moment.",
+    "basedOnRecords": "Based on historical records",
+    "aiLabel": "ORDA AI",
+    "placeholder": "Ask the Oracle about the Golden Horde...",
+    "disclaimer": "AI responses are based on verified historical scholarship · 13th–15th century CE",
+    "greeting": "As-salamu alaykum, traveler. I am ORDA, your guide through the ages of the Great Steppe. Ask me of khans and caravans, of golden cities and forgotten battles — I am here to illuminate the past with the light of knowledge."
+  },
+  "artifactGallery": {
+    "title": "Artifact Collection",
+    "subtitle": "{{count}} objects recovered from the Great Steppe",
+    "all": "All",
+    "unableToLoad": "Unable to load artifacts right now.",
+    "found": "Found",
+    "city": "City"
+  },
+  "quests": {
+    "title": "Quest Log",
+    "subtitle": "Choose your path wisely — history remembers every decision",
+    "unableToLoad": "Unable to load quests right now.",
+    "activeQuest": "ACTIVE QUEST",
+    "selectQuest": "Select a quest",
+    "chooseQuestPrompt": "Choose a quest to begin your journey.",
+    "questComplete": "QUEST COMPLETE",
+    "onCooldown": "ON COOLDOWN",
+    "availableAgain": "Available again {{date}}",
+    "checkBackLater": "Check back later.",
+    "completeQuest": "Complete Quest",
+    "completing": "Completing…"
+  },
+  "certificate": {
+    "loading": "Loading your certificate…",
+    "unableToLoad": "Unable to load your certificate right now.",
+    "journeyComplete": "JOURNEY COMPLETE",
+    "title": "Certificate of Excellence",
+    "subtitle": "Your mastery of Golden Horde history has been verified",
+    "thisCertifies": "This certifies that",
+    "defaultTitle": "Brave Explorer",
+    "hasCompleted": "has completed the journey as",
+    "characterOf": "{{name}} of the Golden Horde",
+    "traversed": "Having traversed the Great Steppe, explored the cities of the Altan Orda, and conversed with the Oracle of Ages.",
+    "cities": "Cities",
+    "artifacts": "Artifacts",
+    "quests": "Quests",
+    "issuedBy": "ISSUED BY",
+    "academyName": "ORDA AI Academy",
+    "date": "DATE",
+    "notYetIssued": "Not yet issued",
+    "issue": "Issue Certificate",
+    "reissue": "Reissue Certificate",
+    "issuing": "Issuing…",
+    "shareAchievement": "Share Achievement",
+    "backToJourney": "Back to Journey",
+    "issueTitle": "ORDA Historical Journey Certificate"
+  },
+  "passport": {
+    "officialDocument": "OFFICIAL DOCUMENT",
+    "title": "Passport of the Great Steppe",
+    "registered": "Registered",
+    "language": "LANGUAGE",
+    "settings": "SETTINGS",
+    "fullNamePlaceholder": "Full name",
+    "bioPlaceholder": "Bio",
+    "logout": "Logout",
+    "signingOut": "Signing out…",
+    "level": "Level",
+    "xp": "XP",
+    "coins": "Coins",
+    "dailyStreak": "Daily Streak",
+    "visitedCities": "Visited Cities",
+    "completedQuests": "Completed Quests",
+    "collectedArtifacts": "Collected Artifacts",
+    "achievements": "ACHIEVEMENTS",
+    "noAchievements": "Complete quests to earn your first achievement.",
+    "certificates": "CERTIFICATES",
+    "noCertificates": "No certificates issued yet — complete your journey to earn one.",
+    "journeyTimeline": "JOURNEY TIMELINE",
+    "noTimeline": "Your journey is just beginning — complete a quest to start your timeline.",
+    "timelineVisited": "Visited {{name}}",
+    "timelineCollected": "Collected {{name}}",
+    "timelineCompleted": "Completed {{name}}",
+    "timelineProgress": "Made progress on the journey",
+    "aCity": "a city",
+    "anArtifact": "an artifact",
+    "aQuest": "a quest",
+    "defaultTitle": "Beginner"
+  },
+  "auth": {
+    "welcomeBack": "Welcome Back",
+    "joinJourney": "Join the Journey",
+    "signInSubtitle": "Sign in to continue your journey through the Great Steppe",
+    "registerSubtitle": "Create an account to begin your journey",
+    "signIn": "Sign In",
+    "register": "Register",
+    "email": "Email",
+    "username": "Username",
+    "fullNameOptional": "Full name (optional)",
+    "password": "Password",
+    "rememberMe": "Remember me",
+    "pleaseWait": "Please wait…",
+    "createAccount": "Create Account",
+    "enteringSteppe": "Entering the Great Steppe…",
+    "welcomeBackShort": "WELCOME BACK",
+    "accountCreated": "ACCOUNT CREATED",
+    "errors": {
+      "emailInvalid": "Enter a valid email address",
+      "usernameTooShort": "Username must be at least {{count}} characters",
+      "passwordTooShort": "Password must be at least {{count}} characters"
+    }
+  },
+  "language": {
+    "kk": "Қазақша",
+    "ru": "Русский",
+    "en": "English"
+  }
+}
