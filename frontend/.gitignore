@@ -31,7 +31,6 @@ dist-ssr
 dist/
 build/
 out/
-lib/
 
 # TypeScript build cache info file
 *.tsbuildinfo

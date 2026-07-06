@@ -71,8 +71,11 @@ def get_quiz_service(uow: Annotated[UnitOfWork, Depends(get_uow)]) -> QuizServic
     return QuizService(uow)
 
 
-def get_admin_service(uow: Annotated[UnitOfWork, Depends(get_uow)]) -> AdminService:
-    return AdminService(uow)
+def get_admin_service(
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
+    rag_pipeline: Annotated[RAGPipeline, Depends(get_rag_pipeline)],
+) -> AdminService:
+    return AdminService(uow, rag_pipeline)
 
 
 def get_storage_service() -> StorageService:

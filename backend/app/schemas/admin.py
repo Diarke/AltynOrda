@@ -5,9 +5,10 @@ from datetime import datetime
 
 from pydantic import Field
 
-from app.enums import AchievementType, DocumentSourceType, UserRole
+from app.enums import AchievementType, DocumentSourceType, Language, UserRole
 from app.schemas.auth import UserResponse
 from app.schemas.common import BaseSchema
+from app.schemas.quest import QuestResponse
 
 
 class AdminStatisticsResponse(BaseSchema):
@@ -23,9 +24,25 @@ class AdminStatisticsResponse(BaseSchema):
     certificates_issued: int
 
 
+class AdminUserResponse(UserResponse):
+    """Admin view of a user account, exposing gameplay fields not in the public profile."""
+
+    xp: int
+    coins: int
+    level: int
+    streak_days: int
+    equipped_frame: str
+
+
 class AdminUserUpdateRequest(BaseSchema):
     role: UserRole | None = None
     is_active: bool | None = None
+    xp: int | None = Field(default=None, ge=0)
+    coins: int | None = Field(default=None, ge=0)
+    level: int | None = Field(default=None, ge=1)
+
+
+# ─── Cities ─────────────────────────────────────────────────────────────────
 
 
 class AdminCityCreateRequest(BaseSchema):
@@ -40,6 +57,21 @@ class AdminCityCreateRequest(BaseSchema):
     significance: str | None = None
 
 
+class AdminCityUpdateRequest(BaseSchema):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    slug: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    historical_period: str | None = Field(default=None, max_length=100)
+    latitude: float | None = None
+    longitude: float | None = None
+    image_url: str | None = None
+    population_estimate: str | None = None
+    significance: str | None = None
+
+
+# ─── Artifacts ──────────────────────────────────────────────────────────────
+
+
 class AdminArtifactCreateRequest(BaseSchema):
     city_id: uuid.UUID
     name: str = Field(min_length=1, max_length=255)
@@ -50,27 +82,125 @@ class AdminArtifactCreateRequest(BaseSchema):
     historical_context: str | None = None
 
 
+class AdminArtifactUpdateRequest(BaseSchema):
+    city_id: uuid.UUID | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    era: str | None = Field(default=None, max_length=100)
+    rarity: str | None = Field(default=None, max_length=50)
+    image_url: str | None = None
+    historical_context: str | None = None
+
+
+# ─── Quests ─────────────────────────────────────────────────────────────────
+
+
+class AdminQuizQuestion(BaseSchema):
+    """A single structured quiz question, validated at write time.
+
+    Mirrors exactly what QuizService.submit_quiz expects to find when it later
+    parses Quest.quiz_questions as JSON.
+    """
+
+    question: str = Field(min_length=1, max_length=1000)
+    options: list[str] = Field(min_length=2, max_length=8)
+    correct_answer: str = Field(min_length=1, max_length=500)
+
+
 class AdminQuestCreateRequest(BaseSchema):
     city_id: uuid.UUID
     title: str = Field(min_length=1, max_length=255)
     description: str
     difficulty: str = Field(default="medium", max_length=50)
     points: int = Field(default=100, ge=0)
+    xp_reward: int = Field(default=100, ge=0)
+    coin_reward: int = Field(default=10, ge=0)
+    cooldown_hours: int = Field(default=24, ge=0)
+    estimated_time_minutes: int = Field(default=15, ge=0)
+    category: str = Field(default="exploration", max_length=50)
     status: str = Field(default="not_started")
-    quiz_questions: str | None = None
+    quiz_questions: list[AdminQuizQuestion] | None = None
+
+
+class AdminQuestUpdateRequest(BaseSchema):
+    city_id: uuid.UUID | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    difficulty: str | None = Field(default=None, max_length=50)
+    points: int | None = Field(default=None, ge=0)
+    xp_reward: int | None = Field(default=None, ge=0)
+    coin_reward: int | None = Field(default=None, ge=0)
+    cooldown_hours: int | None = Field(default=None, ge=0)
+    estimated_time_minutes: int | None = Field(default=None, ge=0)
+    category: str | None = Field(default=None, max_length=50)
+    status: str | None = None
+    quiz_questions: list[AdminQuizQuestion] | None = None
+
+
+class AdminQuestResponse(QuestResponse):
+    quiz_questions: list[AdminQuizQuestion] | None = None
+
+
+# ─── Gallery images ─────────────────────────────────────────────────────────
+
+
+class AdminGalleryImageResponse(BaseSchema):
+    id: uuid.UUID
+    title: str | None
+    description: str | None
+    language: Language
+    group_key: uuid.UUID | None
+    image_url: str
+    alt_text: str | None
+    sort_order: int
+    is_active: bool
+    created_at: datetime
 
 
 class AdminGalleryImageCreateRequest(BaseSchema):
     title: str | None = None
     description: str | None = None
+    language: Language
+    group_key: uuid.UUID | None = None
     image_url: str
     alt_text: str | None = None
     sort_order: int = Field(default=0, ge=0)
     is_active: bool = True
 
 
+class AdminGalleryImageUpdateRequest(BaseSchema):
+    title: str | None = None
+    description: str | None = None
+    language: Language | None = None
+    group_key: uuid.UUID | None = None
+    image_url: str | None = None
+    alt_text: str | None = None
+    sort_order: int | None = Field(default=None, ge=0)
+    is_active: bool | None = None
+
+
+# ─── Homepage content ───────────────────────────────────────────────────────
+
+
+class AdminHomepageContentResponse(BaseSchema):
+    id: uuid.UUID
+    section: str
+    language: Language
+    group_key: uuid.UUID | None
+    title: str | None
+    body: str | None
+    image_url: str | None
+    cta_text: str | None
+    cta_url: str | None
+    sort_order: int
+    is_active: bool
+    created_at: datetime
+
+
 class AdminHomepageContentCreateRequest(BaseSchema):
     section: str = Field(min_length=1, max_length=100)
+    language: Language
+    group_key: uuid.UUID | None = None
     title: str | None = None
     body: str | None = None
     image_url: str | None = None
@@ -80,14 +210,81 @@ class AdminHomepageContentCreateRequest(BaseSchema):
     is_active: bool = True
 
 
+class AdminHomepageContentUpdateRequest(BaseSchema):
+    section: str | None = Field(default=None, min_length=1, max_length=100)
+    language: Language | None = None
+    group_key: uuid.UUID | None = None
+    title: str | None = None
+    body: str | None = None
+    image_url: str | None = None
+    cta_text: str | None = None
+    cta_url: str | None = None
+    sort_order: int | None = Field(default=None, ge=0)
+    is_active: bool | None = None
+
+
+# ─── Gamification / system settings ────────────────────────────────────────
+
+
+class AdminGamificationSettingResponse(BaseSchema):
+    id: uuid.UUID
+    key: str
+    value: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class AdminGamificationSettingCreateRequest(BaseSchema):
     key: str = Field(min_length=1, max_length=100)
     value: str = Field(min_length=1, max_length=500)
 
 
+class AdminGamificationSettingUpdateRequest(BaseSchema):
+    value: str = Field(min_length=1, max_length=500)
+
+
+class AdminSystemSettingResponse(BaseSchema):
+    id: uuid.UUID
+    key: str
+    value: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class AdminSystemSettingCreateRequest(BaseSchema):
     key: str = Field(min_length=1, max_length=100)
-    value: str = Field(min_length=1, max_length=500)
+    value: str = Field(min_length=1, max_length=20000)
+
+
+class AdminSystemSettingUpdateRequest(BaseSchema):
+    value: str = Field(min_length=1, max_length=20000)
+
+
+class AdminSystemPromptResponse(BaseSchema):
+    value: str
+    updated_at: datetime | None = None
+
+
+class AdminSystemPromptUpdateRequest(BaseSchema):
+    value: str = Field(min_length=1, max_length=20000)
+
+
+# ─── Historical documents ───────────────────────────────────────────────────
+
+
+class AdminHistoricalDocumentResponse(BaseSchema):
+    id: uuid.UUID
+    city_id: uuid.UUID | None
+    title: str
+    content: str
+    source: str
+    source_type: DocumentSourceType
+    author: str | None
+    year: str | None
+    language: Language
+    group_key: uuid.UUID | None
+    embedded_chunks: int
+    created_at: datetime
 
 
 class AdminHistoricalDocumentCreateRequest(BaseSchema):
@@ -98,6 +295,23 @@ class AdminHistoricalDocumentCreateRequest(BaseSchema):
     source_type: DocumentSourceType = DocumentSourceType.SECONDARY
     author: str | None = None
     year: str | None = None
+    language: Language
+    group_key: uuid.UUID | None = None
+
+
+class AdminHistoricalDocumentUpdateRequest(BaseSchema):
+    city_id: uuid.UUID | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    content: str | None = None
+    source: str | None = Field(default=None, min_length=1, max_length=255)
+    source_type: DocumentSourceType | None = None
+    author: str | None = None
+    year: str | None = None
+    language: Language | None = None
+    group_key: uuid.UUID | None = None
+
+
+# ─── Certificates & achievements ────────────────────────────────────────────
 
 
 class AdminCertificateCreateRequest(BaseSchema):
@@ -109,6 +323,12 @@ class AdminCertificateCreateRequest(BaseSchema):
     issued_at: str = Field(min_length=1, max_length=50)
 
 
+class AdminCertificateUpdateRequest(BaseSchema):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    completion_percent: int | None = Field(default=None, ge=0, le=100)
+
+
 class AdminAchievementCreateRequest(BaseSchema):
     user_id: uuid.UUID
     achievement_type: AchievementType
@@ -117,8 +337,76 @@ class AdminAchievementCreateRequest(BaseSchema):
     icon_url: str | None = None
 
 
+class AdminAchievementUpdateRequest(BaseSchema):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    icon_url: str | None = None
+
+
+# ─── Uploads ─────────────────────────────────────────────────────────────────
+
+
 class AdminUploadResponse(BaseSchema):
     url: str
     bucket: str
     key: str
     created_at: datetime | None = None
+
+
+# ─── Analytics ───────────────────────────────────────────────────────────────
+
+
+class TimeSeriesPoint(BaseSchema):
+    date: str
+    value: int
+
+
+class AdminUserGrowthResponse(BaseSchema):
+    series: list[TimeSeriesPoint]
+
+
+class AdminQuestCompletionResponse(BaseSchema):
+    series: list[TimeSeriesPoint]
+    by_status: dict[str, int]
+    top_quests: list[dict[str, str | int]]
+
+
+class AdminAIUsageResponse(BaseSchema):
+    series: list[TimeSeriesPoint]
+    total_messages: int
+
+
+class AdminXPStatsResponse(BaseSchema):
+    average_xp: float
+    max_xp: int
+    buckets: list[dict[str, str | int]]
+
+
+class AdminCoinHolder(BaseSchema):
+    user_id: uuid.UUID
+    username: str
+    coins: int
+
+
+class AdminCoinEconomyResponse(BaseSchema):
+    total_coins_in_circulation: int
+    average_coins: float
+    total_coins_spent_on_cosmetics: int
+    top_holders: list[AdminCoinHolder]
+
+
+class AdminCertificatesAnalyticsResponse(BaseSchema):
+    series: list[TimeSeriesPoint]
+    total_issued: int
+
+
+class AdminActivityItem(BaseSchema):
+    type: str
+    user_id: uuid.UUID | None
+    username: str | None
+    description: str
+    created_at: datetime
+
+
+class AdminRecentActivityResponse(BaseSchema):
+    items: list[AdminActivityItem]

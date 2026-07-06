@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.enums import DocumentSourceType
+from app.enums import DocumentSourceType, Language
 
 if TYPE_CHECKING:
     from app.models.city import City
@@ -36,6 +36,14 @@ class HistoricalDocument(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     author: Mapped[str | None] = mapped_column(String(255), nullable=True)
     year: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    language: Mapped[Language] = mapped_column(
+        Enum(Language, name="historical_document_language", native_enum=False),
+        nullable=False,
+    )
+    # Ties together translated variants of the same source document across languages.
+    group_key: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
 
     city: Mapped["City | None"] = relationship("City", back_populates="documents")
     embeddings: Mapped[list["DocumentEmbedding"]] = relationship(
