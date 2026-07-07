@@ -8,9 +8,10 @@ from redis.asyncio import Redis
 
 from app.config import get_settings
 from app.core.unit_of_work import UnitOfWork
+from app.enums import Language
 from app.exceptions import NotFoundException
 from app.models.city import City
-from app.schemas.city import CityResponse, CitySummaryResponse
+from app.schemas.city import CityGalleryImageResponse, CityResponse, CitySummaryResponse
 from app.schemas.common import PaginatedMeta
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,26 @@ class CityService:
     async def invalidate_cache(self) -> None:
         await self._redis.delete(CITIES_CACHE_KEY)
 
+    async def list_gallery(
+        self, city_id: uuid.UUID, *, language: Language
+    ) -> list[CityGalleryImageResponse]:
+        if await self._uow.cities.get_by_id(city_id) is None:
+            raise NotFoundException("City not found")
+        images = await self._uow.gallery_images.search(
+            city_id=city_id, language=language.value, is_active=True, limit=100
+        )
+        return [
+            CityGalleryImageResponse(
+                id=image.id,
+                title=image.title,
+                description=image.description,
+                image_url=image.image_url,
+                alt_text=image.alt_text,
+                sort_order=image.sort_order,
+            )
+            for image in images
+        ]
+
     @staticmethod
     def _to_response(city: City) -> CityResponse:
         return CityResponse(
@@ -83,6 +104,8 @@ class CityService:
             image_url=city.image_url,
             population_estimate=city.population_estimate,
             significance=city.significance,
+            historical_facts=city.historical_facts,
+            trade_info=city.trade_info,
             created_at=city.created_at,
         )
 

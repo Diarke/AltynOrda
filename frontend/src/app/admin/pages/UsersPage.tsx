@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Pencil, Trash2, Search } from "lucide-react";
+import { Pencil, Trash2, Search, Eye } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Badge } from "../../components/ui/badge";
 import { Switch } from "../../components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { DataTable, type DataTableColumn } from "../components/DataTable";
 import { FormDialog } from "../components/FormDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -29,6 +30,7 @@ export function UsersPage() {
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [form, setForm] = useState<EditForm | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<AdminUser | null>(null);
 
   const { data, isLoading } = useAdminUsers({
     page,
@@ -137,6 +139,9 @@ export function UsersPage() {
         onPageChange={setPage}
         actions={(user) => (
           <div className="flex items-center justify-end gap-1">
+            <Button variant="ghost" size="icon" onClick={() => setPreviewTarget(user)}>
+              <Eye size={14} />
+            </Button>
             <Button variant="ghost" size="icon" onClick={() => openEdit(user)}>
               <Pencil size={14} />
             </Button>
@@ -192,6 +197,35 @@ export function UsersPage() {
           </div>
         </FormDialog>
       )}
+
+      <Dialog open={!!previewTarget} onOpenChange={(open) => !open && setPreviewTarget(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="orda-cinzel">Preview</DialogTitle>
+          </DialogHeader>
+          {previewTarget && (
+            <div className="rounded-xl p-4 space-y-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold" style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)", color: "#0F1115" }}>
+                  {previewTarget.username[0]?.toUpperCase()}
+                </div>
+                <div>
+                  <div className="font-medium">{previewTarget.username}</div>
+                  <div className="text-xs text-muted-foreground">{previewTarget.email}</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs pt-2">
+                <div>Role: <Badge variant={previewTarget.role === "admin" ? "default" : "outline"}>{previewTarget.role}</Badge></div>
+                <div>Status: {previewTarget.is_active ? <Badge variant="secondary">Active</Badge> : <Badge variant="destructive">Disabled</Badge>}</div>
+                <div>Level: {previewTarget.level}</div>
+                <div>XP: {previewTarget.xp}</div>
+                <div>Coins: {previewTarget.coins}</div>
+                <div>Streak: {previewTarget.streak_days}d</div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={!!deleteTarget}

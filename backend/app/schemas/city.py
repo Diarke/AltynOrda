@@ -19,7 +19,18 @@ class CityResponse(BaseSchema):
     image_url: str | None
     population_estimate: str | None
     significance: str | None
+    historical_facts: list[str] | None
+    trade_info: str | None
     created_at: datetime
+
+
+class CityGalleryImageResponse(BaseSchema):
+    id: uuid.UUID
+    title: str | None
+    description: str | None
+    image_url: str
+    alt_text: str | None
+    sort_order: int
 
 
 class CitySummaryResponse(BaseSchema):
@@ -42,3 +53,5 @@ class CityCreateRequest(BaseSchema):
     image_url: str | None = None
     population_estimate: str | None = None
     significance: str | None = None
+    historical_facts: list[str] | None = None
+    trade_info: str | None = None

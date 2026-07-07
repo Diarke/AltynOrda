@@ -9,8 +9,10 @@ import { CitiesPage } from "./pages/CitiesPage";
 import { ArtifactsPage } from "./pages/ArtifactsPage";
 import { GalleryPage } from "./pages/GalleryPage";
 import { HistoricalDocumentsPage } from "./pages/HistoricalDocumentsPage";
+import { KnowledgeBasePage } from "./pages/KnowledgeBasePage";
 import { QuestsPage } from "./pages/QuestsPage";
 import { AchievementsPage } from "./pages/AchievementsPage";
+import { AchievementDefinitionsPage } from "./pages/AchievementDefinitionsPage";
 import { CertificatesPage } from "./pages/CertificatesPage";
 import { HomepagePage } from "./pages/HomepagePage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -77,8 +79,10 @@ export function AdminApp() {
           <Route path="artifacts" element={<ArtifactsPage />} />
           <Route path="gallery" element={<GalleryPage />} />
           <Route path="historical-documents" element={<HistoricalDocumentsPage />} />
+          <Route path="knowledge-base" element={<KnowledgeBasePage />} />
           <Route path="quests" element={<QuestsPage />} />
           <Route path="achievements" element={<AchievementsPage />} />
+          <Route path="achievement-definitions" element={<AchievementDefinitionsPage />} />
           <Route path="certificates" element={<CertificatesPage />} />
           <Route path="homepage" element={<HomepagePage />} />
           <Route path="settings" element={<SettingsPage />} />

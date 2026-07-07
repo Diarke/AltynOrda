@@ -5,15 +5,19 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
+from fastapi import UploadFile
 from sqlalchemy import func, select
 
 from app.ai.prompts import HISTORIAN_SYSTEM_PROMPT
 from app.constants import AI_SYSTEM_PROMPT_SETTING_KEY, AVATAR_FRAME_CATALOG
 from app.core.unit_of_work import UnitOfWork
-from app.enums import Language, ProgressType, QuestStatus, UserRole
-from app.exceptions import NotFoundException
+from app.enums import DocumentSourceType, Language, NotificationType, ProgressType, QuestStatus, UserRole
+from app.exceptions import NotFoundException, ValidationException
+from app.rag.extraction import extract_text
 from app.models.achievement import Achievement
+from app.models.achievement_definition import AchievementDefinition
 from app.models.artifact import Artifact
 from app.models.certificate import Certificate
 from app.models.chat_history import ChatHistory
@@ -21,6 +25,7 @@ from app.models.city import City
 from app.models.gallery_image import GalleryImage
 from app.models.gamification_setting import GamificationSetting
 from app.models.historical_document import HistoricalDocument
+from app.models.historical_figure import HistoricalFigure
 from app.models.homepage_content import HomepageContent
 from app.models.progress import Progress
 from app.models.quest import Quest
@@ -31,6 +36,12 @@ from app.models.user_cosmetic import UserCosmetic
 from app.rag.pipeline import RAGPipeline
 from app.schemas.admin import (
     AdminAchievementCreateRequest,
+    AdminAchievementDefinitionCreateRequest,
+    AdminAchievementDefinitionResponse,
+    AdminAchievementDefinitionUpdateRequest,
+    AdminHistoricalFigureCreateRequest,
+    AdminHistoricalFigureResponse,
+    AdminHistoricalFigureUpdateRequest,
     AdminAchievementUpdateRequest,
     AdminActivityItem,
     AdminAIUsageResponse,
@@ -81,6 +92,9 @@ from app.schemas.suggested_prompt import (
     AdminSuggestedPromptUpdateRequest,
     SuggestedPromptResponse,
 )
+from app.services.notification import notify_all_active_users
+
+MAX_KNOWLEDGE_BASE_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
 
 class AdminService:
@@ -436,12 +450,18 @@ class AdminService:
 
     # ─── Cities ──────────────────────────────────────────────────────────────
 
-    async def list_cities(self, *, offset: int = 0, limit: int = 20) -> list[CityResponse]:
-        cities = await self._uow.cities.get_all(offset=offset, limit=limit)
+    async def list_cities(
+        self, *, q: str | None = None, offset: int = 0, limit: int = 20
+    ) -> list[CityResponse]:
+        cities = await self._uow.cities.search(
+            search_query=q, search_fields=["name", "slug", "historical_period"], offset=offset, limit=limit
+        )
         return [self._to_city_response(city) for city in cities]
 
-    async def count_cities(self) -> int:
-        return await self._uow.cities.count()
+    async def count_cities(self, *, q: str | None = None) -> int:
+        return await self._uow.cities.count_search(
+            search_query=q, search_fields=["name", "slug", "historical_period"]
+        )
 
     async def get_city(self, city_id: uuid.UUID) -> CityResponse:
         city = await self._uow.cities.get_by_id(city_id)
@@ -460,6 +480,8 @@ class AdminService:
             image_url=data.image_url,
             population_estimate=data.population_estimate,
             significance=data.significance,
+            historical_facts=data.historical_facts,
+            trade_info=data.trade_info,
         )
         created = await self._uow.cities.create(city)
         return self._to_city_response(created)
@@ -481,12 +503,32 @@ class AdminService:
 
     # ─── Artifacts ───────────────────────────────────────────────────────────
 
-    async def list_artifacts(self, *, offset: int = 0, limit: int = 20) -> list[ArtifactResponse]:
-        artifacts = await self._uow.artifacts.get_all(offset=offset, limit=limit)
+    async def list_artifacts(
+        self,
+        *,
+        q: str | None = None,
+        city_id: uuid.UUID | None = None,
+        rarity: str | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> list[ArtifactResponse]:
+        artifacts = await self._uow.artifacts.search(
+            search_query=q,
+            search_fields=["name", "era", "description"],
+            filters={"city_id": city_id, "rarity": rarity},
+            offset=offset,
+            limit=limit,
+        )
         return [self._to_artifact_response(artifact) for artifact in artifacts]
 
-    async def count_artifacts(self) -> int:
-        return await self._uow.artifacts.count()
+    async def count_artifacts(
+        self, *, q: str | None = None, city_id: uuid.UUID | None = None, rarity: str | None = None
+    ) -> int:
+        return await self._uow.artifacts.count_search(
+            search_query=q,
+            search_fields=["name", "era", "description"],
+            filters={"city_id": city_id, "rarity": rarity},
+        )
 
     async def get_artifact(self, artifact_id: uuid.UUID) -> ArtifactResponse:
         artifact = await self._uow.artifacts.get_by_id(artifact_id)
@@ -526,12 +568,38 @@ class AdminService:
 
     # ─── Quests ──────────────────────────────────────────────────────────────
 
-    async def list_quests(self, *, offset: int = 0, limit: int = 20) -> list[AdminQuestResponse]:
-        quests = await self._uow.quests.get_all(offset=offset, limit=limit)
+    async def list_quests(
+        self,
+        *,
+        q: str | None = None,
+        city_id: uuid.UUID | None = None,
+        difficulty: str | None = None,
+        category: str | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> list[AdminQuestResponse]:
+        quests = await self._uow.quests.search(
+            search_query=q,
+            search_fields=["title", "description"],
+            filters={"city_id": city_id, "difficulty": difficulty, "category": category},
+            offset=offset,
+            limit=limit,
+        )
         return [self._to_quest_response(quest) for quest in quests]
 
-    async def count_quests(self) -> int:
-        return await self._uow.quests.count()
+    async def count_quests(
+        self,
+        *,
+        q: str | None = None,
+        city_id: uuid.UUID | None = None,
+        difficulty: str | None = None,
+        category: str | None = None,
+    ) -> int:
+        return await self._uow.quests.count_search(
+            search_query=q,
+            search_fields=["title", "description"],
+            filters={"city_id": city_id, "difficulty": difficulty, "category": category},
+        )
 
     async def get_quest(self, quest_id: uuid.UUID) -> AdminQuestResponse:
         quest = await self._uow.quests.get_by_id(quest_id)
@@ -555,6 +623,14 @@ class AdminService:
             quiz_questions=self._quiz_questions_to_json(data.quiz_questions),
         )
         created = await self._uow.quests.create(quest)
+        await notify_all_active_users(
+            self._uow,
+            NotificationType.QUEST_AVAILABLE,
+            "New quest available",
+            f'A new quest "{created.title}" is now available!',
+            entity_type="quest",
+            entity_id=created.id,
+        )
         return self._to_quest_response(created)
 
     async def update_quest(
@@ -584,24 +660,36 @@ class AdminService:
     async def list_gallery_images(
         self,
         *,
+        q: str | None = None,
         language: Language | None = None,
         group_key: uuid.UUID | None = None,
+        city_id: uuid.UUID | None = None,
         offset: int = 0,
         limit: int = 20,
     ) -> list[AdminGalleryImageResponse]:
         images = await self._uow.gallery_images.search(
+            search_query=q,
             language=language.value if language else None,
             group_key=group_key,
+            city_id=city_id,
             offset=offset,
             limit=limit,
         )
         return [self._to_gallery_image_response(image) for image in images]
 
     async def count_gallery_images(
-        self, *, language: Language | None = None, group_key: uuid.UUID | None = None
+        self,
+        *,
+        q: str | None = None,
+        language: Language | None = None,
+        group_key: uuid.UUID | None = None,
+        city_id: uuid.UUID | None = None,
     ) -> int:
         return await self._uow.gallery_images.count_search(
-            language=language.value if language else None, group_key=group_key
+            search_query=q,
+            language=language.value if language else None,
+            group_key=group_key,
+            city_id=city_id,
         )
 
     async def get_gallery_image(self, image_id: uuid.UUID) -> AdminGalleryImageResponse:
@@ -622,6 +710,7 @@ class AdminService:
             alt_text=data.alt_text,
             sort_order=data.sort_order,
             is_active=data.is_active,
+            city_id=data.city_id,
         )
         created = await self._uow.gallery_images.create(image)
         return self._to_gallery_image_response(created)
@@ -649,12 +738,14 @@ class AdminService:
     async def list_homepage_content(
         self,
         *,
+        q: str | None = None,
         section: str | None = None,
         language: Language | None = None,
         offset: int = 0,
         limit: int = 20,
     ) -> list[AdminHomepageContentResponse]:
         items = await self._uow.homepage_content.search(
+            search_query=q,
             section=section,
             language=language.value if language else None,
             offset=offset,
@@ -663,10 +754,10 @@ class AdminService:
         return [self._to_homepage_content_response(item) for item in items]
 
     async def count_homepage_content(
-        self, *, section: str | None = None, language: Language | None = None
+        self, *, q: str | None = None, section: str | None = None, language: Language | None = None
     ) -> int:
         return await self._uow.homepage_content.count_search(
-            section=section, language=language.value if language else None
+            search_query=q, section=section, language=language.value if language else None
         )
 
     async def get_homepage_content(self, content_id: uuid.UUID) -> AdminHomepageContentResponse:
@@ -816,13 +907,45 @@ class AdminService:
     # ─── Historical documents ────────────────────────────────────────────────
 
     async def list_historical_documents(
-        self, *, offset: int = 0, limit: int = 20
+        self,
+        *,
+        q: str | None = None,
+        city_id: uuid.UUID | None = None,
+        source_type: str | None = None,
+        language: Language | None = None,
+        offset: int = 0,
+        limit: int = 20,
     ) -> list[AdminHistoricalDocumentResponse]:
-        documents = await self._uow.documents.get_all(offset=offset, limit=limit)
+        documents = await self._uow.documents.search(
+            search_query=q,
+            search_fields=["title", "source", "author"],
+            filters={
+                "city_id": city_id,
+                "source_type": source_type,
+                "language": language.value if language else None,
+            },
+            offset=offset,
+            limit=limit,
+        )
         return [await self._to_historical_document_response(document) for document in documents]
 
-    async def count_historical_documents(self) -> int:
-        return await self._uow.documents.count()
+    async def count_historical_documents(
+        self,
+        *,
+        q: str | None = None,
+        city_id: uuid.UUID | None = None,
+        source_type: str | None = None,
+        language: Language | None = None,
+    ) -> int:
+        return await self._uow.documents.count_search(
+            search_query=q,
+            search_fields=["title", "source", "author"],
+            filters={
+                "city_id": city_id,
+                "source_type": source_type,
+                "language": language.value if language else None,
+            },
+        )
 
     async def get_historical_document(
         self, document_id: uuid.UUID
@@ -851,6 +974,41 @@ class AdminService:
         await self._rag.index_document(created.id)
         return await self._to_historical_document_response(created)
 
+    async def create_historical_document_from_file(
+        self,
+        *,
+        file: UploadFile,
+        source: str,
+        source_type: DocumentSourceType,
+        language: Language,
+        title: str | None = None,
+        author: str | None = None,
+        year: str | None = None,
+        city_id: uuid.UUID | None = None,
+        group_key: uuid.UUID | None = None,
+    ) -> AdminHistoricalDocumentResponse:
+        raw = await file.read()
+        if not raw:
+            raise ValidationException("Uploaded file is empty")
+        if len(raw) > MAX_KNOWLEDGE_BASE_FILE_SIZE:
+            raise ValidationException("File is too large (max 20MB)")
+        content = extract_text(file.filename or "document.txt", raw)
+
+        derived_title = title or Path(file.filename or "Untitled document").stem
+        return await self.create_historical_document(
+            AdminHistoricalDocumentCreateRequest(
+                city_id=city_id,
+                title=derived_title,
+                content=content,
+                source=source,
+                source_type=source_type,
+                author=author,
+                year=year,
+                language=language,
+                group_key=group_key,
+            )
+        )
+
     async def update_historical_document(
         self, document_id: uuid.UUID, data: AdminHistoricalDocumentUpdateRequest
     ) -> AdminHistoricalDocumentResponse:
@@ -873,13 +1031,17 @@ class AdminService:
     # ─── Certificates ────────────────────────────────────────────────────────
 
     async def list_certificates(
-        self, *, offset: int = 0, limit: int = 20
+        self, *, q: str | None = None, offset: int = 0, limit: int = 20
     ) -> list[CertificateResponse]:
-        certificates = await self._uow.certificates.get_all(offset=offset, limit=limit)
+        certificates = await self._uow.certificates.search(
+            search_query=q, search_fields=["title", "certificate_code"], offset=offset, limit=limit
+        )
         return [self._to_certificate_response(certificate) for certificate in certificates]
 
-    async def count_certificates(self) -> int:
-        return await self._uow.certificates.count()
+    async def count_certificates(self, *, q: str | None = None) -> int:
+        return await self._uow.certificates.count_search(
+            search_query=q, search_fields=["title", "certificate_code"]
+        )
 
     async def get_certificate(self, certificate_id: uuid.UUID) -> CertificateResponse:
         certificate = await self._uow.certificates.get_by_id(certificate_id)
@@ -919,13 +1081,17 @@ class AdminService:
     # ─── Achievements ────────────────────────────────────────────────────────
 
     async def list_achievements(
-        self, *, offset: int = 0, limit: int = 20
+        self, *, q: str | None = None, offset: int = 0, limit: int = 20
     ) -> list[AchievementResponse]:
-        achievements = await self._uow.achievements.get_all(offset=offset, limit=limit)
+        achievements = await self._uow.achievements.search(
+            search_query=q, search_fields=["title", "achievement_type"], offset=offset, limit=limit
+        )
         return [self._to_achievement_response(achievement) for achievement in achievements]
 
-    async def count_achievements(self) -> int:
-        return await self._uow.achievements.count()
+    async def count_achievements(self, *, q: str | None = None) -> int:
+        return await self._uow.achievements.count_search(
+            search_query=q, search_fields=["title", "achievement_type"]
+        )
 
     async def get_achievement(self, achievement_id: uuid.UUID) -> AchievementResponse:
         achievement = await self._uow.achievements.get_by_id(achievement_id)
@@ -962,16 +1128,172 @@ class AdminService:
             raise NotFoundException("Achievement not found")
         await self._uow.achievements.delete(achievement)
 
+    # ─── Achievement definitions (catalog) ───────────────────────────────────
+
+    async def list_achievement_definitions(
+        self,
+        *,
+        q: str | None = None,
+        metric: str | None = None,
+        is_active: bool | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> list[AdminAchievementDefinitionResponse]:
+        definitions = await self._uow.achievement_definitions.search(
+            search_query=q,
+            search_fields=["title", "key", "description"],
+            filters={"metric": metric, "is_active": is_active},
+            offset=offset,
+            limit=limit,
+        )
+        return [self._to_achievement_definition_response(d) for d in definitions]
+
+    async def count_achievement_definitions(
+        self, *, q: str | None = None, metric: str | None = None, is_active: bool | None = None
+    ) -> int:
+        return await self._uow.achievement_definitions.count_search(
+            search_query=q,
+            search_fields=["title", "key", "description"],
+            filters={"metric": metric, "is_active": is_active},
+        )
+
+    async def get_achievement_definition(
+        self, definition_id: uuid.UUID
+    ) -> AdminAchievementDefinitionResponse:
+        definition = await self._uow.achievement_definitions.get_by_id(definition_id)
+        if definition is None:
+            raise NotFoundException("Achievement definition not found")
+        return self._to_achievement_definition_response(definition)
+
+    async def create_achievement_definition(
+        self, data: AdminAchievementDefinitionCreateRequest
+    ) -> AdminAchievementDefinitionResponse:
+        definition = AchievementDefinition(
+            key=data.key,
+            title=data.title,
+            description=data.description,
+            icon_url=data.icon_url,
+            metric=data.metric,
+            threshold=data.threshold,
+            reward_xp=data.reward_xp,
+            reward_coins=data.reward_coins,
+            sort_order=data.sort_order,
+            is_active=data.is_active,
+        )
+        created = await self._uow.achievement_definitions.create(definition)
+        return self._to_achievement_definition_response(created)
+
+    async def update_achievement_definition(
+        self, definition_id: uuid.UUID, data: AdminAchievementDefinitionUpdateRequest
+    ) -> AdminAchievementDefinitionResponse:
+        definition = await self._uow.achievement_definitions.get_by_id(definition_id)
+        if definition is None:
+            raise NotFoundException("Achievement definition not found")
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(definition, field, value)
+        updated = await self._uow.achievement_definitions.update(definition)
+        return self._to_achievement_definition_response(updated)
+
+    async def delete_achievement_definition(self, definition_id: uuid.UUID) -> None:
+        definition = await self._uow.achievement_definitions.get_by_id(definition_id)
+        if definition is None:
+            raise NotFoundException("Achievement definition not found")
+        await self._uow.achievement_definitions.delete(definition)
+
+    # ─── Historical figures ───────────────────────────────────────────────────
+
+    async def list_historical_figures(
+        self,
+        *,
+        q: str | None = None,
+        city_id: uuid.UUID | None = None,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> list[AdminHistoricalFigureResponse]:
+        figures = await self._uow.historical_figures.search(
+            search_query=q,
+            search_fields=["name", "title", "description"],
+            filters={"city_id": city_id},
+            offset=offset,
+            limit=limit,
+        )
+        return [self._to_historical_figure_response(f) for f in figures]
+
+    async def count_historical_figures(
+        self, *, q: str | None = None, city_id: uuid.UUID | None = None
+    ) -> int:
+        return await self._uow.historical_figures.count_search(
+            search_query=q, search_fields=["name", "title", "description"], filters={"city_id": city_id}
+        )
+
+    async def get_historical_figure(self, figure_id: uuid.UUID) -> AdminHistoricalFigureResponse:
+        figure = await self._uow.historical_figures.get_by_id(figure_id)
+        if figure is None:
+            raise NotFoundException("Historical figure not found")
+        return self._to_historical_figure_response(figure)
+
+    async def create_historical_figure(
+        self, data: AdminHistoricalFigureCreateRequest
+    ) -> AdminHistoricalFigureResponse:
+        figure = HistoricalFigure(
+            name=data.name,
+            title=data.title,
+            description=data.description,
+            era=data.era,
+            significance=data.significance,
+            image_url=data.image_url,
+            city_id=data.city_id,
+            sort_order=data.sort_order,
+            is_active=data.is_active,
+        )
+        created = await self._uow.historical_figures.create(figure)
+        return self._to_historical_figure_response(created)
+
+    async def update_historical_figure(
+        self, figure_id: uuid.UUID, data: AdminHistoricalFigureUpdateRequest
+    ) -> AdminHistoricalFigureResponse:
+        figure = await self._uow.historical_figures.get_by_id(figure_id)
+        if figure is None:
+            raise NotFoundException("Historical figure not found")
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(figure, field, value)
+        updated = await self._uow.historical_figures.update(figure)
+        return self._to_historical_figure_response(updated)
+
+    async def delete_historical_figure(self, figure_id: uuid.UUID) -> None:
+        figure = await self._uow.historical_figures.get_by_id(figure_id)
+        if figure is None:
+            raise NotFoundException("Historical figure not found")
+        await self._uow.historical_figures.delete(figure)
+
     # ─── Suggested prompts ───────────────────────────────────────────────────
 
     async def list_suggested_prompts(
-        self, *, offset: int = 0, limit: int = 20
+        self,
+        *,
+        q: str | None = None,
+        language: Language | None = None,
+        is_active: bool | None = None,
+        offset: int = 0,
+        limit: int = 20,
     ) -> list[SuggestedPromptResponse]:
-        prompts = await self._uow.suggested_prompts.get_all(offset=offset, limit=limit)
+        prompts = await self._uow.suggested_prompts.search(
+            search_query=q,
+            search_fields=["prompt_text"],
+            filters={"language": language.value if language else None, "is_active": is_active},
+            offset=offset,
+            limit=limit,
+        )
         return [self._to_suggested_prompt_response(prompt) for prompt in prompts]
 
-    async def count_suggested_prompts(self) -> int:
-        return await self._uow.suggested_prompts.count()
+    async def count_suggested_prompts(
+        self, *, q: str | None = None, language: Language | None = None, is_active: bool | None = None
+    ) -> int:
+        return await self._uow.suggested_prompts.count_search(
+            search_query=q,
+            search_fields=["prompt_text"],
+            filters={"language": language.value if language else None, "is_active": is_active},
+        )
 
     async def get_suggested_prompt(self, prompt_id: uuid.UUID) -> SuggestedPromptResponse:
         prompt = await self._uow.suggested_prompts.get_by_id(prompt_id)
@@ -1068,6 +1390,8 @@ class AdminService:
             image_url=city.image_url,
             population_estimate=city.population_estimate,
             significance=city.significance,
+            historical_facts=city.historical_facts,
+            trade_info=city.trade_info,
             created_at=city.created_at,
         )
 
@@ -1117,6 +1441,7 @@ class AdminService:
             alt_text=image.alt_text,
             sort_order=image.sort_order,
             is_active=image.is_active,
+            city_id=image.city_id,
             created_at=image.created_at,
         )
 
@@ -1196,13 +1521,48 @@ class AdminService:
         return AchievementResponse(
             id=achievement.id,
             user_id=achievement.user_id,
-            achievement_type=achievement.achievement_type.value,
+            achievement_type=achievement.achievement_type,
             title=achievement.title,
             description=achievement.description,
             icon_url=achievement.icon_url,
             reward_xp=achievement.reward_xp,
             reward_coins=achievement.reward_coins,
             achieved_at=achievement.achieved_at,
+        )
+
+    @staticmethod
+    def _to_achievement_definition_response(
+        definition: AchievementDefinition,
+    ) -> AdminAchievementDefinitionResponse:
+        return AdminAchievementDefinitionResponse(
+            id=definition.id,
+            key=definition.key,
+            title=definition.title,
+            description=definition.description,
+            icon_url=definition.icon_url,
+            metric=definition.metric,
+            threshold=definition.threshold,
+            reward_xp=definition.reward_xp,
+            reward_coins=definition.reward_coins,
+            sort_order=definition.sort_order,
+            is_active=definition.is_active,
+            created_at=definition.created_at,
+        )
+
+    @staticmethod
+    def _to_historical_figure_response(figure: HistoricalFigure) -> AdminHistoricalFigureResponse:
+        return AdminHistoricalFigureResponse(
+            id=figure.id,
+            name=figure.name,
+            title=figure.title,
+            description=figure.description,
+            era=figure.era,
+            significance=figure.significance,
+            image_url=figure.image_url,
+            city_id=figure.city_id,
+            sort_order=figure.sort_order,
+            is_active=figure.is_active,
+            created_at=figure.created_at,
         )
 
     @staticmethod

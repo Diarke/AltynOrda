@@ -2,13 +2,14 @@
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Float, String, Text
+from sqlalchemy import JSON, Float, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.artifact import Artifact
+    from app.models.gallery_image import GalleryImage
     from app.models.historical_document import HistoricalDocument
     from app.models.quest import Quest
 
@@ -27,6 +28,8 @@ class City(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     population_estimate: Mapped[str | None] = mapped_column(String(100), nullable=True)
     significance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    historical_facts: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    trade_info: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     artifacts: Mapped[list["Artifact"]] = relationship(
         "Artifact", back_populates="city", cascade="all, delete-orphan"
@@ -36,4 +39,7 @@ class City(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     documents: Mapped[list["HistoricalDocument"]] = relationship(
         "HistoricalDocument", back_populates="city", cascade="all, delete-orphan"
+    )
+    gallery_images: Mapped[list["GalleryImage"]] = relationship(
+        "GalleryImage", back_populates="city", cascade="all, delete-orphan"
     )

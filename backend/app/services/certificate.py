@@ -5,11 +5,12 @@ from datetime import UTC, datetime
 
 from app.constants import CERTIFICATE_MIN_COMPLETION_PERCENT
 from app.core.unit_of_work import UnitOfWork
-from app.enums import QuestStatus
+from app.enums import NotificationType, QuestStatus
 from app.exceptions import ValidationException
 from app.models.certificate import Certificate
 from app.models.user import User
 from app.schemas.certificate import CertificateCreateRequest, CertificateResponse
+from app.services.notification import notify
 
 
 class CertificateService:
@@ -50,6 +51,15 @@ class CertificateService:
             issued_at=datetime.now(UTC).strftime("%Y-%m-%d"),
         )
         created = await self._uow.certificates.create(certificate)
+        await notify(
+            self._uow,
+            user.id,
+            NotificationType.CERTIFICATE_READY,
+            "Certificate ready",
+            f'Your certificate "{created.title}" is ready to download!',
+            entity_type="certificate",
+            entity_id=created.id,
+        )
         return self._to_response(created)
 
     async def get_user_certificates(self, user: User) -> list[CertificateResponse]:

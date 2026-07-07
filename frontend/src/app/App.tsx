@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { motion, useInView, useScroll, useTransform } from "motion/react";
 import { useTranslation, type TFunction } from "react-i18next";
 import { DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, type SupportedLanguage } from "./lib/i18n";
@@ -8,8 +9,12 @@ import {
   useCertificates,
   useChatMutation,
   useCities,
+  useCity,
+  useCityGallery,
+  useHomepageContent,
   useProgress,
   useQuests,
+  useSuggestedPrompts,
   type ApiArtifact,
   type ApiCity,
   type ApiLanguage,
@@ -18,15 +23,17 @@ import {
 } from "./lib/api";
 import {
   Map, Package, Award, MessageSquare, ChevronRight, Compass, ScrollText,
-  ShoppingBag, Globe, Search, Settings, User, Bell, ArrowRight, Play,
+  ShoppingBag, Globe, Settings, User, ArrowRight, Play,
   Mic, Send, X, Menu, ChevronDown, Shield, Crown, BookOpen, Clock,
   MapPin, Download, Share2, Check, ChevronLeft, Star, Eye, Mountain,
   Volume2, Paperclip, TrendingUp, Wind, Zap, Feather, LogOut, Camera
 } from "lucide-react";
 import { GLOBAL_CSS } from "./styles/globalCss";
+import { GlobalSearchTrigger } from "./components/GlobalSearch";
+import { NotificationBell } from "./components/NotificationCenter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "landing" | "chars" | "intro" | "auth" | "dashboard" | "city" | "ai" | "artifacts" | "quests" | "certificate" | "passport";
+type View = "landing" | "chars" | "intro" | "auth" | "dashboard" | "city" | "ai" | "artifacts" | "quests" | "certificate" | "passport" | "privacy" | "terms" | "contacts";
 type CharType = "merchant" | "diplomat" | "explorer";
 
 // ─── Route access control ──────────────────────────────────────────────────────
@@ -44,11 +51,46 @@ function resolveView(target: View, isAuthenticated: boolean, role: string | null
   return target;
 }
 
+// ─── URL routing ──────────────────────────────────────────────────────────────
+// Every view maps to a real URL so the browser's history/back-button and page
+// refreshes reflect actual app state instead of an in-memory-only view switch.
+const VIEW_PATHS: Record<Exclude<View, "city">, string> = {
+  landing: "/",
+  chars: "/characters",
+  intro: "/intro",
+  auth: "/auth",
+  dashboard: "/dashboard",
+  ai: "/ai",
+  artifacts: "/artifacts",
+  quests: "/quests",
+  certificate: "/certificate",
+  passport: "/passport",
+  privacy: "/privacy",
+  terms: "/terms",
+  contacts: "/contacts",
+};
+
+function pathForView(v: View, cityId?: string | null): string {
+  if (v === "city") return cityId ? `/city/${cityId}` : VIEW_PATHS.dashboard;
+  return VIEW_PATHS[v];
+}
+
+function viewForPathname(pathname: string): View {
+  if (pathname.startsWith("/city/")) return "city";
+  const match = (Object.entries(VIEW_PATHS) as [View, string][]).find(([, path]) => path === pathname);
+  return match ? match[0] : "landing";
+}
+
+function cityIdFromPathname(pathname: string): string | null {
+  const match = pathname.match(/^\/city\/([^/]+)\/?$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 interface City {
   id: string; name: string; subtitle: string;
   cx: number; cy: number;
   description: string; founded: string; population: string;
-  facts: string[]; importance: string;
+  facts: string[]; importance: string; tradeInfo: string | null;
   color: string; size: number;
 }
 
@@ -64,7 +106,7 @@ const CITY_SLUGS: Record<string, string> = {
   "Otrar": "otrar",
   "Sygnak": "sygnak",
   "Bolgar": "bolgar",
-  "Kaffa": "kaffa",
+  "Crimea": "crimea",
 };
 
 const CITY_LAYOUTS: Record<string, { cx: number; cy: number; color: string; size: number }> = {
@@ -73,7 +115,7 @@ const CITY_LAYOUTS: Record<string, { cx: number; cy: number; color: string; size
   "otrar": { cx: 730, cy: 415, color: "#C9962C", size: 7 },
   "sygnak": { cx: 630, cy: 415, color: "#B7BAC3", size: 6 },
   "bolgar": { cx: 418, cy: 105, color: "#B7BAC3", size: 6 },
-  "kaffa": { cx: 92, cy: 335, color: "#B7BAC3", size: 6 },
+  "crimea": { cx: 92, cy: 335, color: "#B7BAC3", size: 6 },
 };
 
 function mapApiCity(city: ApiCity, t: TFunction): City {
@@ -90,8 +132,9 @@ function mapApiCity(city: ApiCity, t: TFunction): City {
     description: city.description,
     founded: city.historical_period,
     population: city.population_estimate || t("common.unknown"),
-    facts: [city.significance || city.description, city.historical_period],
+    facts: city.historical_facts?.length ? city.historical_facts : [city.significance || city.description, city.historical_period],
     importance: city.significance || city.description,
+    tradeInfo: city.trade_info ?? null,
     color: layout.color,
     size: layout.size,
   };
@@ -270,7 +313,7 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const pendingSectionRef = useRef<string | null>(null);
-  const { user } = useAuthSession();
+  const { user, isAuthenticated } = useAuthSession();
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 20);
@@ -369,18 +412,20 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
           <LanguageSwitcher />
           {inApp && (
             <>
-              <button className="w-9 h-9 rounded-full flex items-center justify-center transition-colors"
-                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <Search size={15} color="#B7BAC3" />
-              </button>
-              <button className="relative w-9 h-9 rounded-full flex items-center justify-center"
-                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <Bell size={15} color="#B7BAC3" />
-                <span className="notification-dot" />
-              </button>
+              <GlobalSearchTrigger />
+              <NotificationBell />
             </>
           )}
-          {inApp ? (
+          {isAuthenticated && user?.role === "admin" && (
+            <a
+              href="/admin"
+              title={t("nav.admin")}
+              className="nav-link w-9 h-9 rounded-full flex items-center justify-center transition-colors"
+              style={{ background: "rgba(212,175,55,0.12)", border: "1px solid rgba(212,175,55,0.25)" }}>
+              <Shield size={15} color="#D4AF37" />
+            </a>
+          )}
+          {isAuthenticated ? (
             <button
               onClick={() => onNav("passport")}
               title={user ? `${user.username} · ${t("nav.passport")}` : t("nav.passport")}
@@ -419,6 +464,11 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
                 {label}
               </button>
             ))}
+          {isAuthenticated && user?.role === "admin" && (
+            <a href="/admin" className="nav-link text-sm orda-cinzel tracking-widest text-left" style={{ color: "#D4AF37" }}>
+              {t("nav.admin")}
+            </a>
+          )}
           <LanguageSwitcher compact />
         </div>
       )}
@@ -878,13 +928,16 @@ function AdventureSection() {
 }
 
 function StatisticsSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
   const { data: citiesData } = useCities();
   const { data: artifactsData } = useArtifacts();
   const { data: questsData } = useQuests();
+  const { data: statsContent } = useHomepageContent("stats", language);
   const citiesTotal = citiesData?.meta.total ?? 0;
   const artifactsTotal = artifactsData?.meta.total ?? 0;
   const questsTotal = questsData?.meta.total ?? 0;
+  const yearsOfHistory = Number(statsContent?.[0]?.title) || 0;
 
   return (
     <section className="relative py-24 md:py-32"
@@ -894,7 +947,7 @@ function StatisticsSection() {
           <StatCounter value={citiesTotal} label={t("stats.cities")} />
           <StatCounter value={artifactsTotal} label={t("stats.artifacts")} />
           <StatCounter value={questsTotal} label={t("stats.quests")} />
-          <StatCounter value={820} label={t("stats.years")} />
+          <StatCounter value={yearsOfHistory} label={t("stats.years")} />
         </div>
       </div>
     </section>
@@ -923,9 +976,20 @@ function FinalCTASection({ onStart }: { onStart: () => void }) {
   );
 }
 
-function LandingFooter() {
+function LandingFooter({ onNav }: { onNav: (v: View) => void }) {
   const { t } = useTranslation();
-  const links = [t("footer.links.journey"), t("footer.links.cities"), t("footer.links.aiHistorian"), t("footer.links.artifacts")];
+  const exploreLinks: [string, string][] = [
+    [t("footer.links.about"), "about-section"],
+    [t("footer.links.journey"), "journey-section"],
+    [t("footer.links.map"), "map-section"],
+    [t("footer.links.artifacts"), "artifacts-section"],
+    [t("footer.links.aiHistorian"), "ai-historian-section"],
+  ];
+  const legalLinks: [string, View][] = [
+    [t("footer.links.contacts"), "contacts"],
+    [t("footer.links.privacy"), "privacy"],
+    [t("footer.links.terms"), "terms"],
+  ];
   return (
     <footer id="about-section" className="relative py-12 border-t scroll-mt-24" style={{ background: "#0A0C10", borderColor: "rgba(255,255,255,0.05)" }}>
       <div className="max-w-6xl mx-auto px-6">
@@ -936,14 +1000,29 @@ function LandingFooter() {
             </div>
             <span className="text-base font-bold orda-cinzel tracking-[0.2em] text-[#D4AF37]">ORDA</span>
           </div>
-          <div className="flex items-center gap-8">
-            {links.map((label) => (
-              <span key={label} className="text-xs orda-inter text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors cursor-default">{label}</span>
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+            {exploreLinks.map(([label, id]) => (
+              <button key={id} onClick={() => smoothScrollToId(id)}
+                className="nav-link text-xs orda-inter text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors">
+                {label}
+              </button>
             ))}
           </div>
         </div>
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-6 border-t" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
           <p className="text-[11px] orda-inter text-[#B7BAC3]">{t("footer.copyright", { year: new Date().getFullYear() })}</p>
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+            {legalLinks.map(([label, v]) => (
+              <button key={v} onClick={() => onNav(v)}
+                className="nav-link text-[11px] orda-inter text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors">
+                {label}
+              </button>
+            ))}
+            <span className="text-[11px] orda-inter select-none" style={{ color: "#B7BAC3", opacity: 0.4, cursor: "not-allowed" }}
+              title={t("footer.links.comingSoon")}>
+              {t("footer.links.github")}
+            </span>
+          </div>
           <p className="text-[11px] orda-inter text-[#B7BAC3]">{t("footer.subtitle")}</p>
         </div>
       </div>
@@ -951,7 +1030,7 @@ function LandingFooter() {
   );
 }
 
-function LandingStory({ onStart }: { onStart: () => void }) {
+function LandingStory({ onStart, onNav }: { onStart: () => void; onNav: (v: View) => void }) {
   return (
     <div className="relative">
       <JourneySection />
@@ -963,7 +1042,7 @@ function LandingStory({ onStart }: { onStart: () => void }) {
       <AdventureSection />
       <StatisticsSection />
       <FinalCTASection onStart={onStart} />
-      <LandingFooter />
+      <LandingFooter onNav={onNav} />
     </div>
   );
 }
@@ -1327,10 +1406,10 @@ function Dashboard({ character, onSelectCity, onNav }: {
 
   return (
     <div className="min-h-screen pt-16 flex flex-col" style={{ background: "#0F1115" }}>
-      <div className="flex-1 grid grid-cols-[260px_1fr_280px] gap-0 max-h-[calc(100vh-64px)]">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[260px_1fr_280px] gap-0 lg:max-h-[calc(100vh-64px)]">
 
         {/* Left Sidebar */}
-        <aside className="overflow-y-auto border-r flex flex-col gap-4 p-5"
+        <aside className="order-2 lg:order-1 lg:overflow-y-auto border-b lg:border-b-0 lg:border-r flex flex-col gap-4 p-5"
           style={{ borderColor: "rgba(255,255,255,0.06)", background: "#0D1017" }}>
 
           {/* Character badge */}
@@ -1454,7 +1533,7 @@ function Dashboard({ character, onSelectCity, onNav }: {
         </aside>
 
         {/* Map Center */}
-        <main className="p-4 flex flex-col overflow-hidden">
+        <main className="order-1 lg:order-2 p-4 flex flex-col overflow-hidden min-h-[460px] lg:min-h-0">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="orda-cinzel text-base font-bold text-[#F6F4EC] tracking-wider">{t("dashboard.interactiveMap")}</h2>
@@ -1494,7 +1573,7 @@ function Dashboard({ character, onSelectCity, onNav }: {
         </main>
 
         {/* Right Panel */}
-        <aside className="overflow-y-auto border-l flex flex-col gap-4 p-5"
+        <aside className="order-3 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l flex flex-col gap-4 p-5"
           style={{ borderColor: "rgba(255,255,255,0.06)", background: "#0D1017" }}>
 
           {/* AI Assistant teaser */}
@@ -1588,10 +1667,13 @@ function Dashboard({ character, onSelectCity, onNav }: {
 
 // ─── CITY PAGE ────────────────────────────────────────────────────────────────
 function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onNav: (v: View) => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { data: artifactsData, isLoading: artifactsLoading } = useArtifacts();
   const artifacts = (artifactsData?.data || []).filter((artifact) => artifact.city_id === city.id).slice(0, 3);
   const [activeTab, setActiveTab] = useState<"overview" | "timeline" | "gallery" | "stats">("overview");
+  const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
+  const { data: galleryData, isLoading: galleryLoading } = useCityGallery(city.id, language);
+  const galleryImages = galleryData || [];
 
   const timelineEvents = [
     { year: "1220s", event: t("city.timelineEvents.mongolArrival") },
@@ -1616,7 +1698,7 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
   return (
     <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#0F1115" }}>
       {/* Hero Banner */}
-      <div className="relative h-72 overflow-hidden">
+      <div className="relative min-h-[300px] sm:h-72 overflow-hidden">
         <div className="absolute inset-0"
           style={{ background: "linear-gradient(135deg, #1A1C14 0%, #0F1115 50%, #141018 100%)" }} />
         <div className="absolute inset-0"
@@ -1638,13 +1720,13 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
           <button onClick={onBack} className="flex items-center gap-2 text-sm text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors mb-4 orda-inter">
             <ChevronLeft size={16} /> {t("city.backToMap")}
           </button>
-          <div className="flex items-end gap-6">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-6">
             <div>
               <div className="badge-gold mb-3">{t("city.goldenHordeCity")}</div>
-              <h1 className="orda-cinzel text-4xl md:text-5xl font-bold text-[#F6F4EC] mb-2 gold-glow-text">{city.name}</h1>
+              <h1 className="orda-cinzel text-3xl sm:text-4xl md:text-5xl font-bold text-[#F6F4EC] mb-2 gold-glow-text">{city.name}</h1>
               <p className="orda-cormorant text-xl text-[#D4AF37] italic">{city.subtitle}</p>
             </div>
-            <div className="ml-auto flex gap-3 flex-shrink-0">
+            <div className="sm:ml-auto flex flex-wrap gap-3 flex-shrink-0">
               <button onClick={() => onNav("quests")} className="btn-primary text-sm py-3 px-6 flex items-center gap-2">
                 <Zap size={14} /> {t("city.quest")}
               </button>
@@ -1657,11 +1739,11 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
       </div>
 
       {/* Tabs */}
-      <div className="border-b px-8 lg:px-16 flex gap-8"
+      <div className="border-b px-8 lg:px-16 flex gap-6 sm:gap-8 overflow-x-auto"
         style={{ borderColor: "rgba(255,255,255,0.06)" }}>
         {(["overview", "timeline", "gallery", "stats"] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
-            className={`py-4 text-sm orda-cinzel tracking-wider capitalize transition-all duration-200 ${activeTab === tab ? "tab-active" : "tab-inactive"}`}>
+            className={`py-4 text-sm orda-cinzel tracking-wider capitalize transition-all duration-200 flex-shrink-0 whitespace-nowrap ${activeTab === tab ? "tab-active" : "tab-inactive"}`}>
             {t(`city.tabs.${tab}`)}
           </button>
         ))}
@@ -1701,6 +1783,17 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
                   ))}
                 </div>
               </div>
+
+              {/* Trade information */}
+              {city.tradeInfo && (
+                <div className="rounded-[20px] p-7" style={{ background: "rgba(87,214,209,0.04)", border: "1px solid rgba(87,214,209,0.12)" }}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <ShoppingBag size={18} color="#57D6D1" />
+                    <h2 className="orda-cinzel text-base font-semibold text-[#57D6D1]">{t("city.tradeInformation")}</h2>
+                  </div>
+                  <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed">{city.tradeInfo}</p>
+                </div>
+              )}
             </div>
 
             {/* Sidebar stats */}
@@ -1764,19 +1857,33 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
         {activeTab === "gallery" && (
           <div className="animate-slide-up">
             <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC] mb-8">{t("city.gallery")}</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {Array.from({ length: 6 }, (_, i) => (
-                <div key={i} className="aspect-[4/3] rounded-[16px] overflow-hidden relative gold-hover cursor-pointer"
-                  style={{ background: `linear-gradient(${135 + i * 30}deg, rgba(212,175,55,0.08), rgba(34,38,47,0.8))`, border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-4xl mb-2">{["🏛️", "🗺️", "⚔️", "🪙", "🏺", "📜"][i]}</div>
-                      <div className="text-xs orda-cinzel text-[#B7BAC3]">{t("city.historicalView", { index: i + 1 })}</div>
-                    </div>
+            {galleryLoading ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {Array.from({ length: 4 }, (_, i) => (
+                  <div key={i} className="aspect-[4/3] rounded-[16px]" style={{ background: "rgba(34,38,47,0.5)" }} />
+                ))}
+              </div>
+            ) : galleryImages.length > 0 ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {galleryImages.map((image) => (
+                  <div key={image.id} className="aspect-[4/3] rounded-[16px] overflow-hidden relative gold-hover cursor-pointer"
+                    style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <img src={image.image_url} alt={image.alt_text || image.title || city.name}
+                      className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                    {image.title && (
+                      <div className="absolute inset-x-0 bottom-0 px-3 py-2"
+                        style={{ background: "linear-gradient(0deg, rgba(15,17,21,0.9), transparent)" }}>
+                        <span className="text-xs orda-cinzel text-[#F6F4EC]">{image.title}</span>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-[20px] p-10 text-center" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <p className="orda-inter text-sm text-[#B7BAC3]">{t("city.noGalleryImages")}</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -1799,14 +1906,26 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
 
 // ─── AI HISTORIAN ─────────────────────────────────────────────────────────────
 function AIHistorian({ onBack }: { onBack: () => void }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const location = useLocation();
+  const rrNavigate = useNavigate();
   const chatMutation = useChatMutation();
+  const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
+  const { data: promptsData } = useSuggestedPrompts(language);
   const [messages, setMessages] = useState<{ role: "ai" | "user"; text: string }[]>([
     { role: "ai", text: t("aiHistorian.greeting") },
   ]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Deep-link from global search: land here with the picked suggested question prefilled.
+  useEffect(() => {
+    const prefill = (location.state as { prefillPrompt?: string } | null)?.prefillPrompt;
+    if (!prefill) return;
+    setInput(prefill);
+    rrNavigate(location.pathname, { replace: true, state: {} });
+  }, [location.state]);
 
   const send = async () => {
     if (!input.trim()) return;
@@ -1829,7 +1948,9 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typing]);
 
-  const suggestions = t("aiHistorian.suggestions", { returnObjects: true }) as string[];
+  const suggestions = promptsData?.length
+    ? promptsData.map((p) => p.prompt_text)
+    : (t("aiHistorian.suggestions", { returnObjects: true }) as string[]);
 
   return (
     <div className="min-h-screen pt-16 flex flex-col" style={{ background: "#0F1115" }}>
@@ -1960,6 +2081,8 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
 // ─── ARTIFACT GALLERY ─────────────────────────────────────────────────────────
 function ArtifactGallery({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation();
+  const location = useLocation();
+  const rrNavigate = useNavigate();
   const { data: citiesData } = useCities();
   const { data: artifactsData, isLoading, error } = useArtifacts();
   const [selected, setSelected] = useState<Artifact | null>(null);
@@ -1968,6 +2091,15 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
   const artifactItems = (artifactsData?.data || []).map((artifact) => mapApiArtifact(artifact, cities.find((city) => city.id === artifact.city_id)?.name || t("common.unknown"), t));
   const categories = ["All", ...Array.from(new Set(artifactItems.map(a => a.category)))];
   const filtered = filter === "All" ? artifactItems : artifactItems.filter(a => a.category === filter);
+
+  // Deep-link from global search: land here already scoped to the result the user picked.
+  useEffect(() => {
+    const targetId = (location.state as { selectedArtifactId?: string } | null)?.selectedArtifactId;
+    if (!targetId || artifactItems.length === 0) return;
+    const match = artifactItems.find((a) => a.id === targetId);
+    if (match) setSelected(match);
+    rrNavigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, artifactItems]);
 
   return (
     <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#0F1115" }}>
@@ -2033,6 +2165,12 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
             </div>
           ))}
         </div>
+        {!isLoading && !error && filtered.length === 0 && (
+          <div className="rounded-[20px] p-10 text-center" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <Package size={28} color="#B7BAC3" className="mx-auto mb-3" />
+            <p className="orda-inter text-sm text-[#B7BAC3]">{t("artifactGallery.noResults")}</p>
+          </div>
+        )}
       </div>
 
       {/* Artifact modal */}
@@ -2079,6 +2217,8 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
 // ─── QUEST VIEW ───────────────────────────────────────────────────────────────
 function QuestView({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation();
+  const location = useLocation();
+  const rrNavigate = useNavigate();
   const { data: citiesData } = useCities();
   const { data: questsData, isLoading, error } = useQuests();
   const { completeQuestMutation } = useProgress();
@@ -2087,6 +2227,15 @@ function QuestView({ onBack }: { onBack: () => void }) {
   const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
   const questItems = (questsData?.data || []).map((quest) => ({ ...quest, cityName: cities.find((city) => city.id === quest.city_id)?.name || t("common.unknown") }));
   const activeQuestUi = activeQuest ? mapApiQuest(activeQuest, activeQuest.cityName) : null;
+
+  // Deep-link from global search: land here already scoped to the result the user picked.
+  useEffect(() => {
+    const targetId = (location.state as { selectedQuestId?: string } | null)?.selectedQuestId;
+    if (!targetId || questItems.length === 0) return;
+    const match = questItems.find((q) => q.id === targetId);
+    if (match) { setActiveQuest(match); setCompletedQuestId(null); }
+    rrNavigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, questItems]);
 
   const isOnCooldown = Boolean(
     activeQuest?.completion_status === "completed" &&
@@ -2147,6 +2296,12 @@ function QuestView({ onBack }: { onBack: () => void }) {
               </div>
             )
           ))}
+          {!isLoading && !error && questItems.length === 0 && (
+            <div className="rounded-[16px] p-8 text-center" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <Zap size={24} color="#B7BAC3" className="mx-auto mb-3" />
+              <p className="orda-inter text-sm text-[#B7BAC3]">{t("quests.noQuestsAvailable")}</p>
+            </div>
+          )}
         </div>
 
         {error && <div className="mb-4 text-sm text-[#B7BAC3]">{t("quests.unableToLoad")}</div>}
@@ -2325,8 +2480,8 @@ function Certificate({ character, onBack }: { character: CharType; onBack: () =>
       </div>
 
       {/* Actions */}
-      <div className="flex flex-col items-center gap-3 mt-8 animate-slide-up" style={{ animationDelay: "0.5s" }}>
-        <div className="flex gap-4">
+      <div className="flex flex-col items-center gap-3 mt-8 animate-slide-up w-full" style={{ animationDelay: "0.5s" }}>
+        <div className="flex flex-wrap justify-center gap-4">
           <button onClick={() => issueCertificateMutation.mutate({ title: t("certificate.issueTitle") })}
             disabled={issueCertificateMutation.isPending}
             className="btn-primary flex items-center gap-2" style={{ opacity: issueCertificateMutation.isPending ? 0.7 : 1 }}>
@@ -2793,30 +2948,110 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
   );
 }
 
+// ─── STATIC PAGES (Privacy / Terms / Contacts) ────────────────────────────────
+function LegalPage({ page, onNav }: { page: "privacy" | "terms"; onNav: (v: View) => void }) {
+  const { t } = useTranslation();
+  const sections = t(`${page}.sections`, { returnObjects: true }) as { heading: string; body: string }[];
+  return (
+    <div className="min-h-screen pt-16 pb-20 animate-fade-in" style={{ background: "#0F1115" }}>
+      <div className="max-w-3xl mx-auto px-6 py-10">
+        <button onClick={() => onNav("landing")}
+          className="nav-link flex items-center gap-2 text-sm text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors mb-8 orda-inter">
+          <ChevronLeft size={16} /> {t("common.backToHome")}
+        </button>
+        <div className="badge-gold mb-4 inline-block">{t(`${page}.badge`)}</div>
+        <h1 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC] mb-4">{t(`${page}.title`)}</h1>
+        <p className="orda-inter text-sm text-[#B7BAC3] mb-10">{t(`${page}.updated`)}</p>
+        <div className="space-y-6">
+          {sections.map((section, i) => (
+            <div key={i} className="rounded-[20px] p-7" style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <h2 className="orda-cinzel text-base font-semibold text-[#F6F4EC] mb-3">{section.heading}</h2>
+              <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed">{section.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ContactsPage({ onNav }: { onNav: (v: View) => void }) {
+  const { t } = useTranslation();
+  const email = t("contacts.email");
+  return (
+    <div className="min-h-screen pt-16 pb-20 flex items-center justify-center px-4 animate-fade-in"
+      style={{ background: "radial-gradient(ellipse at top, rgba(212,175,55,0.04) 0%, #0F1115 60%)" }}>
+      <div className="max-w-md w-full">
+        <button onClick={() => onNav("landing")}
+          className="nav-link flex items-center gap-2 text-sm text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors mb-8 orda-inter">
+          <ChevronLeft size={16} /> {t("common.backToHome")}
+        </button>
+        <div className="glass-dark rounded-[24px] p-8 text-center animate-scale-in">
+          <div className="w-14 h-14 mx-auto mb-4 rounded-2xl flex items-center justify-center"
+            style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)" }}>
+            <MessageSquare size={22} color="#0F1115" />
+          </div>
+          <h1 className="orda-cinzel text-2xl font-bold text-[#F6F4EC] mb-2">{t("contacts.title")}</h1>
+          <p className="orda-inter text-sm text-[#B7BAC3] mb-6 leading-relaxed">{t("contacts.intro")}</p>
+          <a href={`mailto:${email}`} className="nav-link btn-primary inline-flex items-center justify-center gap-2 text-sm px-6 py-3 mb-4">
+            {email}
+          </a>
+          <p className="orda-inter text-xs text-[#B7BAC3]">{t("contacts.responseTime")}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { isAuthenticated, user } = useAuthSession();
-  const [view, setView] = useState<View>("landing");
+  const location = useLocation();
+  const rrNavigate = useNavigate();
   const [character, setCharacter] = useState<CharType>("explorer");
-  const [selectedCity, setSelectedCity] = useState<City | null>(null);
-  const [prevView, setPrevView] = useState<View | null>(null);
-  const [key, setKey] = useState(0);
+
+  const view = viewForPathname(location.pathname);
+  const cityId = view === "city" ? cityIdFromPathname(location.pathname) : null;
+  // The city list endpoint only returns summary fields; the detail page needs the
+  // full record (description, significance, historical_facts, trade_info, ...), so
+  // it's fetched separately by id rather than derived from the summary list.
+  const { data: cityDetailData, isError: cityDetailError, isLoading: cityDetailLoading } = useCity(cityId ?? undefined);
+  const selectedCity = cityDetailData ? mapApiCity(cityDetailData, t) : null;
 
   const navigate = (v: View) => {
     const resolved = resolveView(v, isAuthenticated, user?.role ?? null);
-    setPrevView(view);
-    setView(resolved);
-    setKey(k => k + 1);
+    rrNavigate(pathForView(resolved));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // If a session expires (or refresh fails) while on a protected view, drop back to auth.
+  // react-router marks the first history entry with the key "default" — if we're
+  // still on it there's nothing in-app to go back to, so fall back to the dashboard
+  // instead of letting the browser leave the app entirely.
+  const goBack = () => {
+    if (location.key !== "default") rrNavigate(-1);
+    else navigate("dashboard");
+  };
+
+  // Passive route guard: if a session expires (or refresh fails) while on a protected
+  // route, drop back to auth; conversely, bounce an already-authenticated visitor away
+  // from the guest-only auth screen. Runs on every route change, not just login/logout,
+  // so directly opening a URL (or pressing Back into one) is guarded too.
   useEffect(() => {
     if (PROTECTED_VIEWS.includes(view) && !isAuthenticated) {
-      navigate("auth");
+      rrNavigate("/auth", { replace: true });
+    } else if (GUEST_ONLY_VIEWS.includes(view) && isAuthenticated) {
+      rrNavigate("/dashboard", { replace: true });
     }
-  }, [isAuthenticated]);
+  }, [view, isAuthenticated]);
+
+  // A /city/:id URL that doesn't resolve (bad id, deleted city) settles back on
+  // the dashboard once the lookup has actually failed — not while still loading.
+  useEffect(() => {
+    if (view === "city" && cityId && cityDetailError) {
+      rrNavigate("/dashboard", { replace: true });
+    }
+  }, [view, cityId, cityDetailError]);
 
   // Honor the account's saved language preference (e.g. after signing in on a new device).
   useEffect(() => {
@@ -2831,12 +3066,8 @@ export default function App() {
   };
 
   const handleCitySelect = (city: City) => {
-    setSelectedCity(city);
-    navigate("city");
-  };
-
-  const handleBack = () => {
-    navigate(prevView || "dashboard");
+    rrNavigate(pathForView("city", city.id));
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   return (
@@ -2845,11 +3076,11 @@ export default function App() {
 
       <NavBar view={view} onNav={navigate} />
 
-      <div key={key} className="view-enter">
+      <div key={location.pathname} className="view-enter">
         {view === "landing" && (
           <>
             <Landing onStart={() => navigate("chars")} />
-            <LandingStory onStart={() => navigate("chars")} />
+            <LandingStory onStart={() => navigate("chars")} onNav={navigate} />
           </>
         )}
         {view === "chars" && (
@@ -2866,17 +3097,23 @@ export default function App() {
         {view === "dashboard" && (
           <Dashboard character={character} onSelectCity={handleCitySelect} onNav={navigate} />
         )}
-        {view === "city" && selectedCity && (
-          <CityPage city={selectedCity} onBack={() => navigate("dashboard")} onNav={navigate} />
+        {view === "city" && (
+          selectedCity ? (
+            <CityPage city={selectedCity} onBack={() => navigate("dashboard")} onNav={navigate} />
+          ) : (
+            <div className="min-h-screen pt-16 flex items-center justify-center" style={{ background: "#0F1115" }}>
+              <div className="animate-pulse-gold w-10 h-10 rounded-full" style={{ background: "rgba(212,175,55,0.15)" }} />
+            </div>
+          )
         )}
         {view === "ai" && (
-          <AIHistorian onBack={handleBack} />
+          <AIHistorian onBack={goBack} />
         )}
         {view === "artifacts" && (
-          <ArtifactGallery onBack={handleBack} />
+          <ArtifactGallery onBack={goBack} />
         )}
         {view === "quests" && (
-          <QuestView onBack={handleBack} />
+          <QuestView onBack={goBack} />
         )}
         {view === "certificate" && (
           <Certificate character={character} onBack={() => navigate("dashboard")} />
@@ -2884,6 +3121,9 @@ export default function App() {
         {view === "passport" && (
           <Passport onBack={() => navigate("dashboard")} onLogout={() => navigate("landing")} />
         )}
+        {view === "privacy" && <LegalPage page="privacy" onNav={navigate} />}
+        {view === "terms" && <LegalPage page="terms" onNav={navigate} />}
+        {view === "contacts" && <ContactsPage onNav={navigate} />}
       </div>
     </div>
   );

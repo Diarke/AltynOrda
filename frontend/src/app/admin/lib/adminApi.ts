@@ -41,6 +41,26 @@ export interface AdminGalleryImage {
   alt_text: string | null;
   sort_order: number;
   is_active: boolean;
+  city_id: string | null;
+  created_at: string;
+}
+
+export type AchievementMetric =
+  | "xp" | "coins" | "level" | "streak_days"
+  | "quests_completed" | "cities_visited" | "artifacts_collected" | "certificates_issued";
+
+export interface AdminAchievementDefinition {
+  id: string;
+  key: string;
+  title: string;
+  description: string;
+  icon_url: string | null;
+  metric: AchievementMetric;
+  threshold: number;
+  reward_xp: number;
+  reward_coins: number;
+  sort_order: number;
+  is_active: boolean;
   created_at: string;
 }
 
@@ -303,8 +323,8 @@ export function useDeleteAdminUser() {
 
 export type AdminCityInput = Omit<ApiCity, "id" | "created_at">;
 
-export function useAdminCities(page = 1, pageSize = 20) {
-  return useAdminList<ApiCity>("cities", "cities", { page, page_size: pageSize });
+export function useAdminCities(page = 1, pageSize = 20, q?: string) {
+  return useAdminList<ApiCity>("cities", "cities", { page, page_size: pageSize, q });
 }
 
 export function useCreateAdminCity() {
@@ -337,8 +357,18 @@ export function useDeleteAdminCity() {
 
 export type AdminArtifactInput = Omit<ApiArtifact, "id" | "created_at">;
 
-export function useAdminArtifacts(page = 1, pageSize = 20) {
-  return useAdminList<ApiArtifact>("artifacts", "artifacts", { page, page_size: pageSize });
+export function useAdminArtifacts(
+  page = 1,
+  pageSize = 20,
+  filters?: { q?: string; cityId?: string; rarity?: string }
+) {
+  return useAdminList<ApiArtifact>("artifacts", "artifacts", {
+    page,
+    page_size: pageSize,
+    q: filters?.q,
+    city_id: filters?.cityId,
+    rarity: filters?.rarity,
+  });
 }
 
 export function useCreateAdminArtifact() {
@@ -371,8 +401,19 @@ export function useDeleteAdminArtifact() {
 
 export type AdminQuestInput = Omit<AdminQuest, "id" | "created_at" | "completion_status" | "cooldown_until">;
 
-export function useAdminQuests(page = 1, pageSize = 20) {
-  return useAdminList<AdminQuest>("quests", "quests", { page, page_size: pageSize });
+export function useAdminQuests(
+  page = 1,
+  pageSize = 20,
+  filters?: { q?: string; cityId?: string; difficulty?: string; category?: string }
+) {
+  return useAdminList<AdminQuest>("quests", "quests", {
+    page,
+    page_size: pageSize,
+    q: filters?.q,
+    city_id: filters?.cityId,
+    difficulty: filters?.difficulty,
+    category: filters?.category,
+  });
 }
 
 export function useCreateAdminQuest() {
@@ -405,11 +446,13 @@ export function useDeleteAdminQuest() {
 
 export type AdminGalleryImageInput = Omit<AdminGalleryImage, "id" | "created_at">;
 
-export function useAdminGalleryImages(params: { page?: number; pageSize?: number; language?: string }) {
+export function useAdminGalleryImages(params: { page?: number; pageSize?: number; language?: string; cityId?: string; q?: string }) {
   return useAdminList<AdminGalleryImage>("gallery-images", "gallery-images", {
     page: params.page ?? 1,
     page_size: params.pageSize ?? 20,
     language: params.language,
+    city_id: params.cityId,
+    q: params.q,
   });
 }
 
@@ -443,12 +486,13 @@ export function useDeleteAdminGalleryImage() {
 
 export type AdminHomepageContentInput = Omit<AdminHomepageContent, "id" | "created_at">;
 
-export function useAdminHomepageContent(params: { page?: number; pageSize?: number; section?: string; language?: string }) {
+export function useAdminHomepageContent(params: { page?: number; pageSize?: number; section?: string; language?: string; q?: string }) {
   return useAdminList<AdminHomepageContent>("homepage-content", "homepage-content", {
     page: params.page ?? 1,
     page_size: params.pageSize ?? 50,
     section: params.section,
     language: params.language,
+    q: params.q,
   });
 }
 
@@ -578,10 +622,53 @@ export type AdminHistoricalDocumentInput = Omit<
   "id" | "created_at" | "embedded_chunks"
 >;
 
-export function useAdminHistoricalDocuments(page = 1, pageSize = 20) {
+export function useAdminHistoricalDocuments(
+  page = 1,
+  pageSize = 20,
+  filters?: { q?: string; cityId?: string; sourceType?: string; language?: string }
+) {
   return useAdminList<AdminHistoricalDocument>("historical-documents", "historical-documents", {
     page,
     page_size: pageSize,
+    q: filters?.q,
+    city_id: filters?.cityId,
+    source_type: filters?.sourceType,
+    language: filters?.language,
+  });
+}
+
+export interface AdminHistoricalDocumentUploadInput {
+  file: File;
+  source: string;
+  source_type: string;
+  language: string;
+  title?: string;
+  author?: string;
+  year?: string;
+  city_id?: string | null;
+  group_key?: string | null;
+}
+
+export function useUploadAdminHistoricalDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AdminHistoricalDocumentUploadInput) => {
+      const formData = new FormData();
+      formData.append("file", input.file);
+      formData.append("source", input.source);
+      formData.append("source_type", input.source_type);
+      formData.append("language", input.language);
+      if (input.title) formData.append("title", input.title);
+      if (input.author) formData.append("author", input.author);
+      if (input.year) formData.append("year", input.year);
+      if (input.city_id) formData.append("city_id", input.city_id);
+      if (input.group_key) formData.append("group_key", input.group_key);
+      return request<AdminHistoricalDocument>("/admin/historical-documents/upload", {
+        method: "POST",
+        body: formData,
+      });
+    },
+    onSuccess: () => invalidate(queryClient, "historical-documents"),
   });
 }
 
@@ -621,8 +708,8 @@ export function useDeleteAdminHistoricalDocument() {
 
 export type AdminCertificateInput = Omit<ApiCertificate, "id" | "created_at">;
 
-export function useAdminCertificates(page = 1, pageSize = 20) {
-  return useAdminList<ApiCertificate>("certificates", "certificates", { page, page_size: pageSize });
+export function useAdminCertificates(page = 1, pageSize = 20, q?: string) {
+  return useAdminList<ApiCertificate>("certificates", "certificates", { page, page_size: pageSize, q });
 }
 
 export function useCreateAdminCertificate() {
@@ -630,6 +717,15 @@ export function useCreateAdminCertificate() {
   return useMutation({
     mutationFn: (data: AdminCertificateInput) =>
       request<ApiCertificate>("/admin/certificates", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => invalidate(queryClient, "certificates"),
+  });
+}
+
+export function useUpdateAdminCertificate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Pick<AdminCertificateInput, "title" | "description" | "completion_percent">> }) =>
+      request<ApiCertificate>(`/admin/certificates/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: () => invalidate(queryClient, "certificates"),
   });
 }
@@ -646,8 +742,8 @@ export function useDeleteAdminCertificate() {
 
 export type AdminAchievementInput = Omit<ApiAchievement, "id" | "reward_xp" | "reward_coins" | "achieved_at">;
 
-export function useAdminAchievements(page = 1, pageSize = 20) {
-  return useAdminList<ApiAchievement>("achievements", "achievements", { page, page_size: pageSize });
+export function useAdminAchievements(page = 1, pageSize = 20, q?: string) {
+  return useAdminList<ApiAchievement>("achievements", "achievements", { page, page_size: pageSize, q });
 }
 
 export function useCreateAdminAchievement() {
@@ -655,6 +751,15 @@ export function useCreateAdminAchievement() {
   return useMutation({
     mutationFn: (data: AdminAchievementInput) =>
       request<ApiAchievement>("/admin/achievements", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => invalidate(queryClient, "achievements"),
+  });
+}
+
+export function useUpdateAdminAchievement() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Pick<AdminAchievementInput, "title" | "description" | "icon_url">> }) =>
+      request<ApiAchievement>(`/admin/achievements/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: () => invalidate(queryClient, "achievements"),
   });
 }
@@ -667,14 +772,65 @@ export function useDeleteAdminAchievement() {
   });
 }
 
+// ─── Achievement definitions (catalog) ───────────────────────────────────────
+
+export type AdminAchievementDefinitionInput = Omit<AdminAchievementDefinition, "id" | "created_at">;
+
+export function useAdminAchievementDefinitions(
+  page = 1,
+  pageSize = 50,
+  filters?: { q?: string; metric?: string; isActive?: boolean }
+) {
+  return useAdminList<AdminAchievementDefinition>("achievement-definitions", "achievement-definitions", {
+    page,
+    page_size: pageSize,
+    q: filters?.q,
+    metric: filters?.metric,
+    is_active: filters?.isActive,
+  });
+}
+
+export function useCreateAdminAchievementDefinition() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: AdminAchievementDefinitionInput) =>
+      request<AdminAchievementDefinition>("/admin/achievement-definitions", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => invalidate(queryClient, "achievement-definitions"),
+  });
+}
+
+export function useUpdateAdminAchievementDefinition() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<AdminAchievementDefinitionInput> }) =>
+      request<AdminAchievementDefinition>(`/admin/achievement-definitions/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => invalidate(queryClient, "achievement-definitions"),
+  });
+}
+
+export function useDeleteAdminAchievementDefinition() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => request<void>(`/admin/achievement-definitions/${id}`, { method: "DELETE" }),
+    onSuccess: () => invalidate(queryClient, "achievement-definitions"),
+  });
+}
+
 // ─── Suggested prompts ───────────────────────────────────────────────────────
 
 export type AdminSuggestedPromptInput = Omit<AdminSuggestedPrompt, "id" | "created_at">;
 
-export function useAdminSuggestedPrompts(page = 1, pageSize = 50) {
+export function useAdminSuggestedPrompts(
+  page = 1,
+  pageSize = 50,
+  filters?: { q?: string; language?: string; isActive?: boolean }
+) {
   return useAdminList<AdminSuggestedPrompt>("suggested-prompts", "suggested-prompts", {
     page,
     page_size: pageSize,
+    q: filters?.q,
+    language: filters?.language,
+    is_active: filters?.isActive,
   });
 }
 

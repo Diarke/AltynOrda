@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, X } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Eye, Search, Zap, MapPin } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Badge } from "../../components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { DataTable, type DataTableColumn } from "../components/DataTable";
 import { FormDialog } from "../components/FormDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -44,12 +45,20 @@ function emptyQuestion(): AdminQuizQuestion {
 
 export function QuestsPage() {
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [cityFilter, setCityFilter] = useState("all");
+  const [difficultyFilter, setDifficultyFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AdminQuest | null>(null);
   const [form, setForm] = useState<AdminQuestInput>(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<AdminQuest | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<AdminQuest | null>(null);
 
-  const { data, isLoading } = useAdminQuests(page, 20);
+  const { data, isLoading } = useAdminQuests(page, 20, {
+    q: search || undefined,
+    cityId: cityFilter === "all" ? undefined : cityFilter,
+    difficulty: difficultyFilter === "all" ? undefined : difficultyFilter,
+  });
   const { data: citiesData } = useAdminCities(1, 100);
   const createMutation = useCreateAdminQuest();
   const updateMutation = useUpdateAdminQuest();
@@ -135,6 +144,40 @@ export function QuestsPage() {
         </Button>
       </div>
 
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 max-w-sm">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by title or description…"
+            className="pl-9"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          />
+        </div>
+        <Select value={cityFilter} onValueChange={(v) => { setCityFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All cities</SelectItem>
+            {cities.map((city) => (
+              <SelectItem key={city.id} value={city.id}>{city.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={difficultyFilter} onValueChange={(v) => { setDifficultyFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-36">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All difficulties</SelectItem>
+            {DIFFICULTIES.map((d) => (
+              <SelectItem key={d} value={d}>{d}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <DataTable
         columns={columns}
         rows={data?.data ?? []}
@@ -146,6 +189,9 @@ export function QuestsPage() {
         onPageChange={setPage}
         actions={(quest) => (
           <div className="flex items-center justify-end gap-1">
+            <Button variant="ghost" size="icon" onClick={() => setPreviewTarget(quest)}>
+              <Eye size={14} />
+            </Button>
             <Button variant="ghost" size="icon" onClick={() => openEdit(quest)}>
               <Pencil size={14} />
             </Button>
@@ -310,6 +356,34 @@ export function QuestsPage() {
           ))}
         </div>
       </FormDialog>
+
+      <Dialog open={!!previewTarget} onOpenChange={(open) => !open && setPreviewTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="orda-cinzel">Preview</DialogTitle>
+          </DialogHeader>
+          {previewTarget && (
+            <div className="rounded-2xl p-6 border" style={{ background: "rgba(23,26,32,0.8)", borderColor: "rgba(212,175,55,0.12)" }}>
+              <Badge className="mb-3">{previewTarget.category}</Badge>
+              <h3 className="orda-cinzel text-xl font-bold mb-1" style={{ color: "#F6F4EC" }}>{previewTarget.title}</h3>
+              <div className="flex items-center gap-2 mb-4 text-xs" style={{ color: "#B7BAC3" }}>
+                <MapPin size={12} color="#D4AF37" /> {cityName(previewTarget.city_id)}
+              </div>
+              <p className="text-sm italic mb-4" style={{ color: "#F6F4EC" }}>{previewTarget.description}</p>
+              <div className="flex items-center gap-4 text-xs" style={{ color: "#B7BAC3" }}>
+                <span className="flex items-center gap-1"><Zap size={12} color="#D4AF37" /> +{previewTarget.xp_reward} XP</span>
+                <span>+{previewTarget.coin_reward} coins</span>
+                <Badge variant="outline">{previewTarget.difficulty}</Badge>
+              </div>
+              {previewTarget.quiz_questions && previewTarget.quiz_questions.length > 0 && (
+                <p className="text-xs mt-3 pt-3 border-t" style={{ color: "#B7BAC3", borderColor: "rgba(255,255,255,0.06)" }}>
+                  {previewTarget.quiz_questions.length} quiz question(s) attached
+                </p>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={!!deleteTarget}

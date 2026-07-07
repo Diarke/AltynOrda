@@ -5,7 +5,7 @@ from datetime import datetime
 
 from pydantic import Field
 
-from app.enums import AchievementType, DocumentSourceType, Language, UserRole
+from app.enums import AchievementMetric, DocumentSourceType, Language, UserRole
 from app.schemas.auth import UserResponse
 from app.schemas.common import BaseSchema
 from app.schemas.quest import QuestResponse
@@ -55,6 +55,8 @@ class AdminCityCreateRequest(BaseSchema):
     image_url: str | None = None
     population_estimate: str | None = None
     significance: str | None = None
+    historical_facts: list[str] | None = None
+    trade_info: str | None = None
 
 
 class AdminCityUpdateRequest(BaseSchema):
@@ -67,6 +69,8 @@ class AdminCityUpdateRequest(BaseSchema):
     image_url: str | None = None
     population_estimate: str | None = None
     significance: str | None = None
+    historical_facts: list[str] | None = None
+    trade_info: str | None = None
 
 
 # ─── Artifacts ──────────────────────────────────────────────────────────────
@@ -154,6 +158,7 @@ class AdminGalleryImageResponse(BaseSchema):
     alt_text: str | None
     sort_order: int
     is_active: bool
+    city_id: uuid.UUID | None
     created_at: datetime
 
 
@@ -166,6 +171,7 @@ class AdminGalleryImageCreateRequest(BaseSchema):
     alt_text: str | None = None
     sort_order: int = Field(default=0, ge=0)
     is_active: bool = True
+    city_id: uuid.UUID | None = None
 
 
 class AdminGalleryImageUpdateRequest(BaseSchema):
@@ -177,6 +183,7 @@ class AdminGalleryImageUpdateRequest(BaseSchema):
     alt_text: str | None = None
     sort_order: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
+    city_id: uuid.UUID | None = None
 
 
 # ─── Homepage content ───────────────────────────────────────────────────────
@@ -331,7 +338,7 @@ class AdminCertificateUpdateRequest(BaseSchema):
 
 class AdminAchievementCreateRequest(BaseSchema):
     user_id: uuid.UUID
-    achievement_type: AchievementType
+    achievement_type: str = Field(min_length=1, max_length=50)
     title: str = Field(min_length=1, max_length=255)
     description: str
     icon_url: str | None = None
@@ -341,6 +348,91 @@ class AdminAchievementUpdateRequest(BaseSchema):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     icon_url: str | None = None
+
+
+# ─── Achievement definitions (catalog) ──────────────────────────────────────
+
+
+class AdminAchievementDefinitionResponse(BaseSchema):
+    id: uuid.UUID
+    key: str
+    title: str
+    description: str
+    icon_url: str | None
+    metric: AchievementMetric
+    threshold: int
+    reward_xp: int
+    reward_coins: int
+    sort_order: int
+    is_active: bool
+    created_at: datetime
+
+
+class AdminAchievementDefinitionCreateRequest(BaseSchema):
+    key: str = Field(min_length=1, max_length=100)
+    title: str = Field(min_length=1, max_length=255)
+    description: str
+    icon_url: str | None = None
+    metric: AchievementMetric
+    threshold: int = Field(ge=0)
+    reward_xp: int = Field(default=0, ge=0)
+    reward_coins: int = Field(default=0, ge=0)
+    sort_order: int = Field(default=0, ge=0)
+    is_active: bool = True
+
+
+class AdminAchievementDefinitionUpdateRequest(BaseSchema):
+    key: str | None = Field(default=None, min_length=1, max_length=100)
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    icon_url: str | None = None
+    metric: AchievementMetric | None = None
+    threshold: int | None = Field(default=None, ge=0)
+    reward_xp: int | None = Field(default=None, ge=0)
+    reward_coins: int | None = Field(default=None, ge=0)
+    sort_order: int | None = Field(default=None, ge=0)
+    is_active: bool | None = None
+
+
+# ─── Historical figures ──────────────────────────────────────────────────────
+
+
+class AdminHistoricalFigureResponse(BaseSchema):
+    id: uuid.UUID
+    name: str
+    title: str
+    description: str
+    era: str
+    significance: str | None
+    image_url: str | None
+    city_id: uuid.UUID | None
+    sort_order: int
+    is_active: bool
+    created_at: datetime
+
+
+class AdminHistoricalFigureCreateRequest(BaseSchema):
+    name: str = Field(min_length=1, max_length=255)
+    title: str = Field(min_length=1, max_length=255)
+    description: str
+    era: str = Field(max_length=100)
+    significance: str | None = None
+    image_url: str | None = None
+    city_id: uuid.UUID | None = None
+    sort_order: int = Field(default=0, ge=0)
+    is_active: bool = True
+
+
+class AdminHistoricalFigureUpdateRequest(BaseSchema):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    era: str | None = Field(default=None, max_length=100)
+    significance: str | None = None
+    image_url: str | None = None
+    city_id: uuid.UUID | None = None
+    sort_order: int | None = Field(default=None, ge=0)
+    is_active: bool | None = None
 
 
 # ─── Uploads ─────────────────────────────────────────────────────────────────

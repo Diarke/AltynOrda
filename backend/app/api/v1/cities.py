@@ -6,7 +6,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.dependencies.services import get_city_service
-from app.schemas.city import CityResponse, CitySummaryResponse
+from app.enums import Language
+from app.schemas.city import CityGalleryImageResponse, CityResponse, CitySummaryResponse
 from app.schemas.common import PaginatedResponse, SuccessResponse
 from app.services.city import CityService
 
@@ -38,3 +39,17 @@ async def get_city(
 ) -> SuccessResponse[CityResponse]:
     city = await service.get_city(city_id)
     return SuccessResponse(data=city)
+
+
+@router.get(
+    "/{city_id}/gallery",
+    response_model=SuccessResponse[list[CityGalleryImageResponse]],
+    summary="Get a city's image gallery",
+)
+async def get_city_gallery(
+    city_id: uuid.UUID,
+    service: Annotated[CityService, Depends(get_city_service)],
+    language: Language = Language.KAZAKH,
+) -> SuccessResponse[list[CityGalleryImageResponse]]:
+    images = await service.list_gallery(city_id, language=language)
+    return SuccessResponse(data=images)

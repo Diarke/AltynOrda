@@ -4,6 +4,13 @@
 export const GLOBAL_CSS = `
   html { scroll-behavior: smooth; }
 
+  /* Every interactive element (buttons, links, cards, city/artifact markers,
+     nav/sidebar items) should clearly read as clickable. */
+  button:not(:disabled), [role="button"]:not([aria-disabled="true"]), a[href], select, .city-marker,
+  .card-hover, .gold-hover, .quest-card, .nav-link, .tab-active, .tab-inactive,
+  .admin-nav-link { cursor: pointer; }
+  button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
+
   .nav-link { outline: none; }
   .nav-link:focus-visible { outline: 2px solid #D4AF37; outline-offset: 4px; border-radius: 4px; }
 

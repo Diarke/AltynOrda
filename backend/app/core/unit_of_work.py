@@ -5,6 +5,7 @@ from types import TracebackType
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.achievement import AchievementRepository
+from app.repositories.achievement_definition import AchievementDefinitionRepository
 from app.repositories.artifact import ArtifactRepository
 from app.repositories.certificate import CertificateRepository
 from app.repositories.chat_history import ChatHistoryRepository
@@ -13,7 +14,9 @@ from app.repositories.embedding import EmbeddingRepository
 from app.repositories.gallery_image import GalleryImageRepository
 from app.repositories.gamification_setting import GamificationSettingRepository
 from app.repositories.historical_document import HistoricalDocumentRepository
+from app.repositories.historical_figure import HistoricalFigureRepository
 from app.repositories.homepage_content import HomepageContentRepository
+from app.repositories.notification import NotificationRepository
 from app.repositories.progress import ProgressRepository
 from app.repositories.quest import QuestRepository
 from app.repositories.suggested_prompt import SuggestedPromptRepository
@@ -33,9 +36,12 @@ class UnitOfWork:
         self.quests = QuestRepository(session)
         self.progress = ProgressRepository(session)
         self.achievements = AchievementRepository(session)
+        self.achievement_definitions = AchievementDefinitionRepository(session)
         self.chat_history = ChatHistoryRepository(session)
         self.certificates = CertificateRepository(session)
         self.documents = HistoricalDocumentRepository(session)
+        self.historical_figures = HistoricalFigureRepository(session)
+        self.notifications = NotificationRepository(session)
         self.embeddings = EmbeddingRepository(session)
         self.gallery_images = GalleryImageRepository(session)
         self.homepage_content = HomepageContentRepository(session)

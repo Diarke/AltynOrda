@@ -1,32 +1,27 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Eye, Search } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { DataTable, type DataTableColumn } from "../components/DataTable";
 import { FormDialog } from "../components/FormDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { useAdminAchievements, useCreateAdminAchievement, useDeleteAdminAchievement, useAdminUsers } from "../lib/adminApi";
+import {
+  useAdminAchievements,
+  useCreateAdminAchievement,
+  useUpdateAdminAchievement,
+  useDeleteAdminAchievement,
+  useAdminUsers,
+} from "../lib/adminApi";
 import type { ApiAchievement } from "../../lib/api";
-
-const ACHIEVEMENT_TYPES = [
-  "explorer",
-  "scholar",
-  "collector",
-  "completionist",
-  "historian",
-  "merchant",
-  "archaeologist",
-  "master_of_the_steppe",
-  "ai_scholar",
-];
 
 const EMPTY_FORM = {
   user_id: "",
-  achievement_type: "explorer",
+  achievement_type: "",
   title: "",
   description: "",
   icon_url: null as string | null,
@@ -34,27 +29,52 @@ const EMPTY_FORM = {
 
 export function AchievementsPage() {
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<ApiAchievement | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<ApiAchievement | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<ApiAchievement | null>(null);
 
-  const { data, isLoading } = useAdminAchievements(page, 20);
+  const { data, isLoading } = useAdminAchievements(page, 20, search || undefined);
   const { data: usersData } = useAdminUsers({ page: 1, pageSize: 100 });
   const createMutation = useCreateAdminAchievement();
+  const updateMutation = useUpdateAdminAchievement();
   const deleteMutation = useDeleteAdminAchievement();
 
   const users = usersData?.data ?? [];
   const username = (id: string) => users.find((u) => u.id === id)?.username ?? id;
 
   const openCreate = () => {
+    setEditing(null);
     setForm({ ...EMPTY_FORM, user_id: users[0]?.id ?? "" });
+    setDialogOpen(true);
+  };
+
+  const openEdit = (achievement: ApiAchievement) => {
+    setEditing(achievement);
+    setForm({
+      user_id: achievement.user_id,
+      achievement_type: achievement.achievement_type,
+      title: achievement.title,
+      description: achievement.description,
+      icon_url: achievement.icon_url,
+    });
     setDialogOpen(true);
   };
 
   const handleSubmit = async () => {
     try {
-      await createMutation.mutateAsync(form);
-      toast.success("Achievement granted");
+      if (editing) {
+        await updateMutation.mutateAsync({
+          id: editing.id,
+          data: { title: form.title, description: form.description, icon_url: form.icon_url },
+        });
+        toast.success("Achievement updated");
+      } else {
+        await createMutation.mutateAsync(form);
+        toast.success("Achievement granted");
+      }
       setDialogOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Something went wrong");
@@ -92,6 +112,16 @@ export function AchievementsPage() {
         </Button>
       </div>
 
+      <div className="relative max-w-sm">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Search by title or type…"
+          className="pl-9"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+        />
+      </div>
+
       <DataTable
         columns={columns}
         rows={data?.data ?? []}
@@ -102,23 +132,31 @@ export function AchievementsPage() {
         total={data?.meta.total ?? 0}
         onPageChange={setPage}
         actions={(achievement) => (
-          <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(achievement)}>
-            <Trash2 size={14} />
-          </Button>
+          <div className="flex items-center justify-end gap-1">
+            <Button variant="ghost" size="icon" onClick={() => setPreviewTarget(achievement)}>
+              <Eye size={14} />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => openEdit(achievement)}>
+              <Pencil size={14} />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(achievement)}>
+              <Trash2 size={14} />
+            </Button>
+          </div>
         )}
       />
 
       <FormDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        title="Grant achievement"
+        title={editing ? "Edit achievement" : "Grant achievement"}
         onSubmit={handleSubmit}
-        isSubmitting={createMutation.isPending}
-        submitLabel="Grant"
+        isSubmitting={createMutation.isPending || updateMutation.isPending}
+        submitLabel={editing ? "Save" : "Grant"}
       >
         <div className="space-y-1.5">
           <Label>User</Label>
-          <Select value={form.user_id} onValueChange={(value) => setForm({ ...form, user_id: value })}>
+          <Select value={form.user_id} onValueChange={(value) => setForm({ ...form, user_id: value })} disabled={!!editing}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select a user" />
             </SelectTrigger>
@@ -132,19 +170,14 @@ export function AchievementsPage() {
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label>Type</Label>
-          <Select value={form.achievement_type} onValueChange={(value) => setForm({ ...form, achievement_type: value })}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ACHIEVEMENT_TYPES.map((type) => (
-                <SelectItem key={type} value={type}>
-                  {type}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label>Type slug</Label>
+          <Input
+            value={form.achievement_type}
+            onChange={(e) => setForm({ ...form, achievement_type: e.target.value })}
+            placeholder="e.g. explorer_bronze"
+            required
+            disabled={!!editing}
+          />
         </div>
         <div className="space-y-1.5">
           <Label>Title</Label>
@@ -155,6 +188,26 @@ export function AchievementsPage() {
           <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required />
         </div>
       </FormDialog>
+
+      <Dialog open={!!previewTarget} onOpenChange={(open) => !open && setPreviewTarget(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="orda-cinzel">Preview</DialogTitle>
+          </DialogHeader>
+          {previewTarget && (
+            <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.15)" }}>
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "rgba(212,175,55,0.15)" }}>
+                {previewTarget.icon_url ? <img src={previewTarget.icon_url} alt="" className="w-6 h-6" /> : "🏆"}
+              </div>
+              <div>
+                <div className="text-sm orda-cinzel" style={{ color: "#F6F4EC" }}>{previewTarget.title}</div>
+                <div className="text-xs" style={{ color: "#B7BAC3" }}>{previewTarget.description}</div>
+                <div className="text-[11px] mt-1" style={{ color: "#D4AF37" }}>+{previewTarget.reward_xp} XP / +{previewTarget.reward_coins} coins</div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={!!deleteTarget}

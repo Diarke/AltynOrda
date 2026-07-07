@@ -13,7 +13,8 @@
       "legendary": "LEGENDARY",
       "rare": "RARE",
       "common": "COMMON"
-    }
+    },
+    "backToHome": "Back to Home"
   },
   "nav": {
     "journey": "Journey",
@@ -24,7 +25,8 @@
     "enter": "Enter",
     "passport": "Passport",
     "openMenu": "Open menu",
-    "closeMenu": "Close menu"
+    "closeMenu": "Close menu",
+    "admin": "Admin"
   },
   "hero": {
     "tagline": "AI Historical Journey",
@@ -146,10 +148,16 @@
   },
   "footer": {
     "links": {
+      "about": "About",
       "journey": "Journey",
-      "cities": "Cities",
+      "map": "Map",
+      "artifacts": "Artifacts",
       "aiHistorian": "AI Historian",
-      "artifacts": "Artifacts"
+      "contacts": "Contacts",
+      "privacy": "Privacy Policy",
+      "terms": "Terms",
+      "github": "GitHub",
+      "comingSoon": "Coming soon"
     },
     "copyright": "© {{year}} ORDA — AI Historical Journey. All rights reserved.",
     "subtitle": "Altyn Orda · Altan Orda · The Golden Horde"
@@ -211,7 +219,7 @@
       "otrar": "City That Changed History",
       "sygnak": "Throne of the White Horde",
       "bolgar": "Northern Jewel of the Horde",
-      "kaffa": "Pearl of the Black Sea"
+      "crimea": "Pearl of the Black Sea"
     }
   },
   "dashboard": {
@@ -298,7 +306,9 @@
       "palacesSub": "Royal residences",
       "centuries": "Centuries",
       "centuriesSub": "Of Golden Horde rule"
-    }
+    },
+    "tradeInformation": "Trade & Commerce",
+    "noGalleryImages": "No gallery images have been added for this city yet."
   },
   "aiHistorian": {
     "title": "ORDA Oracle",
@@ -324,7 +334,8 @@
     "all": "All",
     "unableToLoad": "Unable to load artifacts right now.",
     "found": "Found",
-    "city": "City"
+    "city": "City",
+    "noResults": "No artifacts match this filter yet."
   },
   "quests": {
     "title": "Quest Log",
@@ -338,7 +349,8 @@
     "availableAgain": "Available again {{date}}",
     "checkBackLater": "Check back later.",
     "completeQuest": "Complete Quest",
-    "completing": "Completing…"
+    "completing": "Completing…",
+    "noQuestsAvailable": "No quests available right now — check back soon."
   },
   "certificate": {
     "loading": "Loading your certificate…",
@@ -424,5 +436,92 @@
     "kk": "Қазақша",
     "ru": "Русский",
     "en": "English"
+  },
+  "privacy": {
+    "badge": "Legal",
+    "title": "Privacy Policy",
+    "updated": "This explains what information ORDA collects and how it's used.",
+    "sections": [
+      {
+        "heading": "Information We Collect",
+        "body": "Account details (email, username), profile info (bio, avatar), and activity data (progress, quests, achievements) needed to run the app."
+      },
+      {
+        "heading": "How We Use Your Information",
+        "body": "To operate the service, personalize your learning journey, track achievements, and improve our historical content. We don't sell your data to third parties."
+      },
+      {
+        "heading": "Data Storage & Security",
+        "body": "Your data is stored on secured servers, with access limited to what the app needs to function."
+      },
+      {
+        "heading": "Your Rights",
+        "body": "You can review, update, or delete your profile information at any time, and request account deletion by contacting us."
+      },
+      {
+        "heading": "Changes to This Policy",
+        "body": "We may update this policy from time to time. Continued use of ORDA means you accept the current version."
+      }
+    ]
+  },
+  "terms": {
+    "badge": "Legal",
+    "title": "Terms of Use",
+    "updated": "Please review these terms before continuing your journey.",
+    "sections": [
+      {
+        "heading": "Acceptance of Terms",
+        "body": "By using ORDA, you agree to these terms of use."
+      },
+      {
+        "heading": "Using ORDA",
+        "body": "ORDA is an educational platform with gamified elements (quests, artifacts, achievements). Please use the service respectfully and for its intended purpose."
+      },
+      {
+        "heading": "Account Responsibility",
+        "body": "You're responsible for keeping your login details secure and for all activity under your account."
+      },
+      {
+        "heading": "Content & Accuracy",
+        "body": "Historical content is curated for educational purposes and may not reflect every historian's perspective."
+      },
+      {
+        "heading": "Limitation of Liability",
+        "body": "ORDA is provided \"as is\", without warranties of accuracy or uninterrupted availability."
+      },
+      {
+        "heading": "Changes to These Terms",
+        "body": "We may update these terms from time to time. Continued use of the service means you accept the changes."
+      }
+    ]
+  },
+  "contacts": {
+    "title": "Contact Us",
+    "intro": "Questions, feedback, or spotted a historical inaccuracy? We'd love to hear from you.",
+    "email": "hello@ordajourney.app",
+    "responseTime": "We typically respond within 2–3 business days."
+  },
+  "search": {
+    "placeholder": "Search cities, artifacts, quests, historical figures…",
+    "shortcutHint": "Search (Ctrl+K)",
+    "close": "Close search",
+    "emptyPrompt": "Start typing to search across the whole journey.",
+    "noResults": "No results for \"{{query}}\"",
+    "hintNavigate": "↑↓ to navigate · ↵ to select",
+    "hintClose": "esc to close",
+    "significance": "Significance",
+    "categories": {
+      "cities": "Cities",
+      "artifacts": "Artifacts",
+      "quests": "Quests",
+      "historicalFigures": "Historical Figures",
+      "suggestedPrompts": "AI Suggested Questions"
+    }
+  },
+  "notificationCenter": {
+    "title": "Notifications",
+    "markAllRead": "Mark all as read",
+    "empty": "No notifications yet.",
+    "delete": "Delete notification"
   }
 }

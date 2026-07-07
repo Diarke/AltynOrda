@@ -4,19 +4,19 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.enums import AchievementType
 
 if TYPE_CHECKING:
+    from app.models.achievement_definition import AchievementDefinition
     from app.models.user import User
 
 
 class Achievement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
-    """User achievement badge."""
+    """User achievement badge — an earned instance of an AchievementDefinition."""
 
     __tablename__ = "achievements"
 
@@ -26,9 +26,14 @@ class Achievement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         index=True,
         nullable=False,
     )
-    achievement_type: Mapped[AchievementType] = mapped_column(
-        Enum(AchievementType, name="achievement_type", native_enum=False),
-        nullable=False,
+    # Freeform slug, not a fixed Python enum — the catalog of possible achievements
+    # lives in AchievementDefinition and is entirely admin-editable.
+    achievement_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    definition_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("achievement_definitions.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
@@ -38,3 +43,4 @@ class Achievement(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     achieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="achievements")
+    definition: Mapped["AchievementDefinition | None"] = relationship("AchievementDefinition")

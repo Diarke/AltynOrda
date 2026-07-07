@@ -35,7 +35,39 @@ export interface ApiCity {
   image_url?: string | null;
   population_estimate?: string | null;
   significance?: string | null;
+  historical_facts?: string[] | null;
+  trade_info?: string | null;
   created_at: string;
+}
+
+export interface ApiCityGalleryImage {
+  id: string;
+  title?: string | null;
+  description?: string | null;
+  image_url: string;
+  alt_text?: string | null;
+  sort_order: number;
+}
+
+export interface ApiSuggestedPrompt {
+  id: string;
+  prompt_text: string;
+  language: ApiLanguage;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ApiHomepageContent {
+  id: string;
+  section: string;
+  language: ApiLanguage;
+  title?: string | null;
+  body?: string | null;
+  image_url?: string | null;
+  cta_text?: string | null;
+  cta_url?: string | null;
+  sort_order: number;
 }
 
 export interface ApiArtifact {
@@ -118,6 +150,50 @@ export interface ApiCertificate {
   certificate_code: string;
   issued_at: string;
   created_at: string;
+}
+
+export interface ApiHistoricalFigure {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  era: string;
+  significance?: string | null;
+  image_url?: string | null;
+  city_id?: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface ApiSearchResultItem {
+  id: string;
+  type: "city" | "artifact" | "quest" | "historical_figure" | "suggested_prompt";
+  title: string;
+  subtitle?: string | null;
+  city_id?: string | null;
+}
+
+export interface ApiGlobalSearchResponse {
+  cities: ApiSearchResultItem[];
+  artifacts: ApiSearchResultItem[];
+  quests: ApiSearchResultItem[];
+  historical_figures: ApiSearchResultItem[];
+  suggested_prompts: ApiSearchResultItem[];
+}
+
+export interface ApiNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface ApiUnreadCount {
+  unread_count: number;
 }
 
 export interface ApiChatResponse {
@@ -334,6 +410,18 @@ export async function getCity(cityId: string) {
   return request<ApiCity>(`/cities/${cityId}`);
 }
 
+export async function getCityGallery(cityId: string, language: ApiLanguage) {
+  return request<ApiCityGalleryImage[]>(`/cities/${cityId}/gallery?language=${language}`);
+}
+
+export async function getSuggestedPrompts(language: ApiLanguage) {
+  return request<ApiSuggestedPrompt[]>(`/chat/suggested-prompts?language=${language}`);
+}
+
+export async function getHomepageContent(section: string, language: ApiLanguage) {
+  return request<ApiHomepageContent[]>(`/homepage-content?section=${section}&language=${language}`);
+}
+
 export async function listArtifacts(page = 1, pageSize = 20) {
   return request<PaginatedResponse<ApiArtifact>>(`/artifacts?page=${page}&page_size=${pageSize}`);
 }
@@ -376,6 +464,40 @@ export async function chatWithHistorian(message: string, cityId?: string | null)
     method: "POST",
     body: JSON.stringify({ message, city_id: cityId }),
   });
+}
+
+export async function getHistoricalFigure(figureId: string) {
+  return request<ApiHistoricalFigure>(`/historical-figures/${figureId}`);
+}
+
+export async function globalSearch(query: string, language: ApiLanguage) {
+  return request<ApiGlobalSearchResponse>(
+    `/search?q=${encodeURIComponent(query)}&language=${language}`
+  );
+}
+
+export async function listNotifications(page = 1, pageSize = 30, unreadOnly = false) {
+  return request<PaginatedResponse<ApiNotification>>(
+    `/notifications?page=${page}&page_size=${pageSize}&unread_only=${unreadOnly}`
+  );
+}
+
+export async function getUnreadNotificationCount() {
+  return request<ApiUnreadCount>("/notifications/unread-count");
+}
+
+export async function markNotificationRead(notificationId: string) {
+  return request<ApiNotification>(`/notifications/${notificationId}/read`, {
+    method: "POST",
+  });
+}
+
+export async function markAllNotificationsRead() {
+  return request<null>("/notifications/read-all", { method: "POST" });
+}
+
+export async function deleteNotification(notificationId: string) {
+  return request<null>(`/notifications/${notificationId}`, { method: "DELETE" });
 }
 
 export function useAuthSession() {
@@ -448,6 +570,50 @@ export function useCities(page = 1, pageSize = 20) {
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
     retry: 2,
+  });
+}
+
+// The list endpoint only returns summary fields (no description/significance/facts/trade
+// info) — city detail pages need the full record, fetched separately by id.
+export function useCity(cityId: string | undefined) {
+  return useQuery({
+    queryKey: ["city", cityId],
+    queryFn: () => getCity(cityId as string),
+    enabled: Boolean(cityId),
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    retry: 1,
+  });
+}
+
+export function useCityGallery(cityId: string | undefined, language: ApiLanguage) {
+  return useQuery({
+    queryKey: ["city-gallery", cityId, language],
+    queryFn: () => getCityGallery(cityId as string, language),
+    enabled: Boolean(cityId),
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+    retry: 1,
+  });
+}
+
+export function useSuggestedPrompts(language: ApiLanguage) {
+  return useQuery({
+    queryKey: ["suggested-prompts", language],
+    queryFn: () => getSuggestedPrompts(language),
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+    retry: 1,
+  });
+}
+
+export function useHomepageContent(section: string, language: ApiLanguage) {
+  return useQuery({
+    queryKey: ["homepage-content", section, language],
+    queryFn: () => getHomepageContent(section, language),
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+    retry: 1,
   });
 }
 
@@ -533,6 +699,9 @@ export function useProgress(enabled = true) {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["progress"] });
       queryClient.invalidateQueries({ queryKey: ["quests"] });
+      // Completing a quest can unlock achievements/artifacts server-side, each of
+      // which creates a notification — refresh right away instead of waiting for the poll.
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
 
@@ -562,6 +731,7 @@ export function useCertificates(enabled = true) {
         return [certificate, ...current.filter((item) => item.id !== certificate.id)];
       });
       queryClient.invalidateQueries({ queryKey: ["certificates"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
 
@@ -576,4 +746,110 @@ export function useChatMutation() {
     mutationFn: ({ message, cityId }: { message: string; cityId?: string | null }) => chatWithHistorian(message, cityId),
     retry: 1,
   });
+}
+
+export function useHistoricalFigure(figureId: string | undefined) {
+  return useQuery({
+    queryKey: ["historical-figure", figureId],
+    queryFn: () => getHistoricalFigure(figureId as string),
+    enabled: Boolean(figureId),
+    staleTime: 10 * 60_000,
+    gcTime: 30 * 60_000,
+    retry: 1,
+  });
+}
+
+// Debounced by the caller — this hook just fires whenever `query` changes, so
+// results stay in sync with keystrokes without re-implementing caching here.
+export function useGlobalSearch(query: string, language: ApiLanguage, enabled = true) {
+  const trimmed = query.trim();
+  return useQuery({
+    queryKey: ["search", trimmed, language],
+    queryFn: () => globalSearch(trimmed, language),
+    enabled: enabled && trimmed.length > 0,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    retry: 0,
+  });
+}
+
+// Polls on an interval since there is no push/websocket channel from the backend —
+// this is what keeps the unread count and list "synchronized" across tabs/devices.
+const NOTIFICATIONS_POLL_INTERVAL = 30_000;
+
+export function useNotifications(enabled = true) {
+  const queryClient = useQueryClient();
+  const authed = Boolean(getAccessToken()) && enabled;
+
+  const notificationsQuery = useQuery({
+    queryKey: ["notifications", "list"],
+    queryFn: () => listNotifications(1, 30, false),
+    enabled: authed,
+    staleTime: 15_000,
+    refetchInterval: NOTIFICATIONS_POLL_INTERVAL,
+    retry: 1,
+  });
+
+  const unreadCountQuery = useQuery({
+    queryKey: ["notifications", "unread-count"],
+    queryFn: getUnreadNotificationCount,
+    enabled: authed,
+    staleTime: 15_000,
+    refetchInterval: NOTIFICATIONS_POLL_INTERVAL,
+    retry: 1,
+  });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["notifications"] });
+
+  const markReadMutation = useMutation({
+    mutationFn: markNotificationRead,
+    onMutate: async (notificationId: string) => {
+      queryClient.setQueryData<PaginatedResponse<ApiNotification> | undefined>(
+        ["notifications", "list"],
+        (current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            data: current.data.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n)),
+          };
+        }
+      );
+      queryClient.setQueryData<ApiUnreadCount | undefined>(["notifications", "unread-count"], (current) =>
+        current ? { unread_count: Math.max(0, current.unread_count - 1) } : current
+      );
+    },
+    onSettled: invalidate,
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: markAllNotificationsRead,
+    onMutate: async () => {
+      queryClient.setQueryData<PaginatedResponse<ApiNotification> | undefined>(
+        ["notifications", "list"],
+        (current) => (current ? { ...current, data: current.data.map((n) => ({ ...n, is_read: true })) } : current)
+      );
+      queryClient.setQueryData<ApiUnreadCount>(["notifications", "unread-count"], { unread_count: 0 });
+    },
+    onSettled: invalidate,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteNotification,
+    onMutate: async (notificationId: string) => {
+      queryClient.setQueryData<PaginatedResponse<ApiNotification> | undefined>(
+        ["notifications", "list"],
+        (current) =>
+          current ? { ...current, data: current.data.filter((n) => n.id !== notificationId) } : current
+      );
+    },
+    onSettled: invalidate,
+  });
+
+  return {
+    notificationsQuery,
+    unreadCountQuery,
+    markReadMutation,
+    markAllReadMutation,
+    deleteMutation,
+  };
 }

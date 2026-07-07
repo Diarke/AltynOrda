@@ -59,3 +59,22 @@ class ProgressRepository(BaseRepository[Progress]):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one()
+
+    async def count_completed_by_user_and_type(
+        self, user_id: uuid.UUID, entity_type: ProgressType
+    ) -> int:
+        from sqlalchemy import func
+
+        from app.enums import QuestStatus
+
+        stmt = (
+            select(func.count())
+            .select_from(Progress)
+            .where(
+                Progress.user_id == user_id,
+                Progress.entity_type == entity_type,
+                Progress.status == QuestStatus.COMPLETED,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one()

@@ -23,22 +23,32 @@ class ProgressType(StrEnum):
     QUIZ = "quiz"
 
 
-class AchievementType(StrEnum):
-    EXPLORER = "explorer"
-    SCHOLAR = "scholar"
-    COLLECTOR = "collector"
-    COMPLETIONIST = "completionist"
-    HISTORIAN = "historian"
-    MERCHANT = "merchant"
-    ARCHAEOLOGIST = "archaeologist"
-    MASTER_OF_THE_STEPPE = "master_of_the_steppe"
-    AI_SCHOLAR = "ai_scholar"
+class AchievementMetric(StrEnum):
+    """User stat an AchievementDefinition's threshold is evaluated against."""
+
+    XP = "xp"
+    COINS = "coins"
+    LEVEL = "level"
+    STREAK_DAYS = "streak_days"
+    QUESTS_COMPLETED = "quests_completed"
+    CITIES_VISITED = "cities_visited"
+    ARTIFACTS_COLLECTED = "artifacts_collected"
+    CERTIFICATES_ISSUED = "certificates_issued"
 
 
 class DocumentSourceType(StrEnum):
     PRIMARY = "primary"
     SECONDARY = "secondary"
     ARCHAEOLOGICAL = "archaeological"
+
+
+class NotificationType(StrEnum):
+    QUEST_AVAILABLE = "quest_available"
+    ACHIEVEMENT_UNLOCKED = "achievement_unlocked"
+    ARTIFACT_DISCOVERED = "artifact_discovered"
+    CERTIFICATE_READY = "certificate_ready"
+    DAILY_QUEST_REFRESHED = "daily_quest_refreshed"
+    DAILY_REWARD = "daily_reward"
 
 
 class Language(StrEnum):

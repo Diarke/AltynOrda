@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.constants import AVATAR_FRAME_CATALOG, PLAYER_TITLES
 from app.core.unit_of_work import UnitOfWork
-from app.enums import AchievementType, ProgressType, QuestStatus
+from app.enums import AchievementMetric, NotificationType, ProgressType, QuestStatus
 from app.exceptions import ConflictException, NotFoundException, ValidationException
 from app.models.achievement import Achievement
 from app.models.progress import Progress
@@ -28,6 +28,7 @@ from app.schemas.progress import (
     QuestCompletionResponse,
     UserProgressSummary,
 )
+from app.services.notification import notify
 
 
 class ProgressService:
@@ -68,6 +69,8 @@ class ProgressService:
             notes=data.notes,
         )
         created = await self._uow.progress.create(progress)
+        if created.status == QuestStatus.COMPLETED:
+            await self._notify_entity_completed(user, created.entity_type, created.entity_id)
         return self._to_response(created)
 
     async def update_progress(
@@ -77,6 +80,7 @@ class ProgressService:
         if progress is None or progress.user_id != user.id:
             raise NotFoundException("Progress record not found")
 
+        was_completed = progress.status == QuestStatus.COMPLETED
         if data.status is not None:
             progress.status = data.status
         if data.score is not None:
@@ -85,7 +89,32 @@ class ProgressService:
             progress.notes = data.notes
 
         updated = await self._uow.progress.update(progress)
+        if updated.status == QuestStatus.COMPLETED and not was_completed:
+            await self._notify_entity_completed(user, updated.entity_type, updated.entity_id)
         return self._to_response(updated)
+
+    async def _notify_entity_completed(
+        self, user: User, entity_type: ProgressType, entity_id: uuid.UUID
+    ) -> None:
+        """Notify the user when marking non-quest progress (currently: artifacts) complete.
+
+        Quest completions are notified from complete_quest instead, and city
+        visits are covered by the cities_visited achievement metric.
+        """
+        if entity_type != ProgressType.ARTIFACT:
+            return
+        artifact = await self._uow.artifacts.get_by_id(entity_id)
+        if artifact is None:
+            return
+        await notify(
+            self._uow,
+            user.id,
+            NotificationType.ARTIFACT_DISCOVERED,
+            "Artifact discovered",
+            f'You discovered "{artifact.name}"!',
+            entity_type="artifact",
+            entity_id=artifact.id,
+        )
 
     async def get_progress_stats(self, user: User) -> ProgressStatsResponse:
         await self._uow.users.get_by_id(user.id)
@@ -105,7 +134,7 @@ class ProgressService:
             AchievementResponse(
                 id=achievement.id,
                 user_id=achievement.user_id,
-                achievement_type=achievement.achievement_type.value,
+                achievement_type=achievement.achievement_type,
                 title=achievement.title,
                 description=achievement.description,
                 icon_url=achievement.icon_url,
@@ -192,6 +221,20 @@ class ProgressService:
         user.last_login_at = now
 
         await self._uow.users.update(user)
+        await notify(
+            self._uow,
+            user.id,
+            NotificationType.DAILY_REWARD,
+            "Daily reward collected",
+            f"+{bonus_xp} XP and +{bonus_coins} coins for a {streak_days}-day streak!",
+        )
+        await notify(
+            self._uow,
+            user.id,
+            NotificationType.DAILY_QUEST_REFRESHED,
+            "Quests refreshed",
+            "Today's quests are ready — check the map for what's new.",
+        )
         await self._award_achievements(user)
         await self._uow.session.commit()
 
@@ -307,78 +350,82 @@ class ProgressService:
         )
 
     async def _award_achievements(self, user: User) -> None:
+        """Grant any admin-defined achievement whose metric threshold is now met.
+
+        The catalog (AchievementDefinition) is entirely DB-driven and admin-editable —
+        this method has no hardcoded achievement rules, only a fixed set of metrics
+        it knows how to compute (see AchievementMetric / _compute_achievement_metrics).
+        """
+        definitions = await self._uow.achievement_definitions.get_active()
+        if not definitions:
+            return
+
         achievements = await self._uow.achievements.get_by_user(user.id)
-        existing_types = {achievement.achievement_type for achievement in achievements}
+        existing_definition_ids = {
+            a.definition_id for a in achievements if a.definition_id is not None
+        }
+        existing_keys_without_definition = {
+            a.achievement_type for a in achievements if a.definition_id is None
+        }
 
-        progress_count = await self._uow.progress.count_completed_by_user(user.id)
-        achievement_rules = [
-            (
-                AchievementType.EXPLORER,
-                progress_count >= 3,
-                "Explorer",
-                "Completed your first batch of quests",
-                150,
-                30,
-            ),
-            (
-                AchievementType.HISTORIAN,
-                user.xp >= 1000,
-                "Historian",
-                "Reached a major XP milestone",
-                250,
-                50,
-            ),
-            (
-                AchievementType.MERCHANT,
-                user.coins >= 500,
-                "Merchant",
-                "Accumulated a substantial coin balance",
-                120,
-                100,
-            ),
-            (
-                AchievementType.ARCHAEOLOGIST,
-                progress_count >= 10,
-                "Archaeologist",
-                "Completed ten quests",
-                400,
-                80,
-            ),
-            (
-                AchievementType.MASTER_OF_THE_STEPPE,
-                user.streak_days >= 7,
-                "Master of the Steppe",
-                "Maintained a seven-day streak",
-                500,
-                120,
-            ),
-            (
-                AchievementType.AI_SCHOLAR,
-                user.streak_days >= 3,
-                "AI Scholar",
-                "Used the platform consistently",
-                300,
-                60,
-            ),
-        ]
+        metrics = await self._compute_achievement_metrics(user)
 
-        for achievement_type, condition, title, description, reward_xp, reward_coins in achievement_rules:
-            if condition and achievement_type not in existing_types:
-                achievement = Achievement(
-                    user_id=user.id,
-                    achievement_type=achievement_type,
-                    title=title,
-                    description=description,
-                    reward_xp=reward_xp,
-                    reward_coins=reward_coins,
-                    achieved_at=datetime.now(UTC),
-                )
-                user.xp += reward_xp
-                user.coins += reward_coins
-                await self._uow.achievements.create(achievement)
-                existing_types.add(achievement_type)
+        for definition in definitions:
+            if definition.id in existing_definition_ids:
+                continue
+            if definition.key in existing_keys_without_definition:
+                continue
+            if metrics.get(definition.metric, 0) < definition.threshold:
+                continue
+
+            achievement = Achievement(
+                user_id=user.id,
+                achievement_type=definition.key,
+                definition_id=definition.id,
+                title=definition.title,
+                description=definition.description,
+                icon_url=definition.icon_url,
+                reward_xp=definition.reward_xp,
+                reward_coins=definition.reward_coins,
+                achieved_at=datetime.now(UTC),
+            )
+            user.xp += definition.reward_xp
+            user.coins += definition.reward_coins
+            await self._uow.achievements.create(achievement)
+            await notify(
+                self._uow,
+                user.id,
+                NotificationType.ACHIEVEMENT_UNLOCKED,
+                "Achievement unlocked",
+                f'You unlocked "{definition.title}" (+{definition.reward_xp} XP, +{definition.reward_coins} coins)!',
+                entity_type="achievement_definition",
+                entity_id=definition.id,
+            )
+            existing_definition_ids.add(definition.id)
 
         user.level = self._calculate_level(user.xp)
+
+    async def _compute_achievement_metrics(self, user: User) -> dict[str, int]:
+        quests_completed = await self._uow.progress.count_completed_by_user_and_type(
+            user.id, ProgressType.QUEST
+        )
+        cities_visited = await self._uow.progress.count_completed_by_user_and_type(
+            user.id, ProgressType.CITY
+        )
+        artifacts_collected = await self._uow.progress.count_completed_by_user_and_type(
+            user.id, ProgressType.ARTIFACT
+        )
+        certificates_issued = len(await self._uow.certificates.get_by_user(user.id))
+        return {
+            AchievementMetric.XP: user.xp,
+            AchievementMetric.COINS: user.coins,
+            AchievementMetric.LEVEL: user.level,
+            AchievementMetric.STREAK_DAYS: user.streak_days,
+            AchievementMetric.QUESTS_COMPLETED: quests_completed,
+            AchievementMetric.CITIES_VISITED: cities_visited,
+            AchievementMetric.ARTIFACTS_COLLECTED: artifacts_collected,
+            AchievementMetric.CERTIFICATES_ISSUED: certificates_issued,
+        }
 
     @staticmethod
     def _calculate_level(xp: int) -> int:

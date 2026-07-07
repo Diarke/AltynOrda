@@ -9,9 +9,13 @@ from app.api.v1 import (
     certificates,
     chat,
     cities,
+    content,
+    historical_figures,
+    notifications,
     progress,
     quests,
     quiz,
+    search,
     users,
 )
 
@@ -25,4 +29,8 @@ api_v1_router.include_router(progress.router)
 api_v1_router.include_router(chat.router)
 api_v1_router.include_router(certificates.router)
 api_v1_router.include_router(quiz.router)
+api_v1_router.include_router(content.router)
+api_v1_router.include_router(historical_figures.router)
+api_v1_router.include_router(search.router)
+api_v1_router.include_router(notifications.router)
 api_v1_router.include_router(admin.router)

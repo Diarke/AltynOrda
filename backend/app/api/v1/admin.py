@@ -5,13 +5,19 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 
 from app.auth.dependencies import AdminUser
 from app.dependencies.services import get_admin_service, get_storage_service
-from app.enums import Language, UserRole
+from app.enums import DocumentSourceType, Language, UserRole
 from app.schemas.admin import (
     AdminAchievementCreateRequest,
+    AdminAchievementDefinitionCreateRequest,
+    AdminAchievementDefinitionResponse,
+    AdminAchievementDefinitionUpdateRequest,
+    AdminHistoricalFigureCreateRequest,
+    AdminHistoricalFigureResponse,
+    AdminHistoricalFigureUpdateRequest,
     AdminAchievementUpdateRequest,
     AdminAIUsageResponse,
     AdminArtifactCreateRequest,
@@ -255,10 +261,11 @@ async def list_cities(
     service: Annotated[AdminService, Depends(get_admin_service)],
     page: int = PageQuery,
     page_size: int = PageSizeQuery,
+    q: str | None = None,
 ) -> PaginatedResponse[CityResponse]:
     offset = (page - 1) * page_size
-    cities = await service.list_cities(offset=offset, limit=page_size)
-    total = await service.count_cities()
+    cities = await service.list_cities(q=q, offset=offset, limit=page_size)
+    total = await service.count_cities(q=q)
     return PaginatedResponse(data=cities, meta=_meta(page, page_size, total))
 
 
@@ -317,10 +324,15 @@ async def list_artifacts(
     service: Annotated[AdminService, Depends(get_admin_service)],
     page: int = PageQuery,
     page_size: int = PageSizeQuery,
+    q: str | None = None,
+    city_id: uuid.UUID | None = None,
+    rarity: str | None = None,
 ) -> PaginatedResponse[ArtifactResponse]:
     offset = (page - 1) * page_size
-    artifacts = await service.list_artifacts(offset=offset, limit=page_size)
-    total = await service.count_artifacts()
+    artifacts = await service.list_artifacts(
+        q=q, city_id=city_id, rarity=rarity, offset=offset, limit=page_size
+    )
+    total = await service.count_artifacts(q=q, city_id=city_id, rarity=rarity)
     return PaginatedResponse(data=artifacts, meta=_meta(page, page_size, total))
 
 
@@ -385,10 +397,16 @@ async def list_quests(
     service: Annotated[AdminService, Depends(get_admin_service)],
     page: int = PageQuery,
     page_size: int = PageSizeQuery,
+    q: str | None = None,
+    city_id: uuid.UUID | None = None,
+    difficulty: str | None = None,
+    category: str | None = None,
 ) -> PaginatedResponse[AdminQuestResponse]:
     offset = (page - 1) * page_size
-    quests = await service.list_quests(offset=offset, limit=page_size)
-    total = await service.count_quests()
+    quests = await service.list_quests(
+        q=q, city_id=city_id, difficulty=difficulty, category=category, offset=offset, limit=page_size
+    )
+    total = await service.count_quests(q=q, city_id=city_id, difficulty=difficulty, category=category)
     return PaginatedResponse(data=quests, meta=_meta(page, page_size, total))
 
 
@@ -455,14 +473,18 @@ async def list_gallery_images(
     service: Annotated[AdminService, Depends(get_admin_service)],
     page: int = PageQuery,
     page_size: int = PageSizeQuery,
+    q: str | None = None,
     language: Language | None = None,
     group_key: uuid.UUID | None = None,
+    city_id: uuid.UUID | None = None,
 ) -> PaginatedResponse[AdminGalleryImageResponse]:
     offset = (page - 1) * page_size
     images = await service.list_gallery_images(
-        language=language, group_key=group_key, offset=offset, limit=page_size
+        q=q, language=language, group_key=group_key, city_id=city_id, offset=offset, limit=page_size
     )
-    total = await service.count_gallery_images(language=language, group_key=group_key)
+    total = await service.count_gallery_images(
+        q=q, language=language, group_key=group_key, city_id=city_id
+    )
     return PaginatedResponse(data=images, meta=_meta(page, page_size, total))
 
 
@@ -537,14 +559,15 @@ async def list_homepage_content(
     service: Annotated[AdminService, Depends(get_admin_service)],
     page: int = PageQuery,
     page_size: int = PageSizeQuery,
+    q: str | None = None,
     section: str | None = None,
     language: Language | None = None,
 ) -> PaginatedResponse[AdminHomepageContentResponse]:
     offset = (page - 1) * page_size
     items = await service.list_homepage_content(
-        section=section, language=language, offset=offset, limit=page_size
+        q=q, section=section, language=language, offset=offset, limit=page_size
     )
-    total = await service.count_homepage_content(section=section, language=language)
+    total = await service.count_homepage_content(q=q, section=section, language=language)
     return PaginatedResponse(data=items, meta=_meta(page, page_size, total))
 
 
@@ -771,10 +794,18 @@ async def list_historical_documents(
     service: Annotated[AdminService, Depends(get_admin_service)],
     page: int = PageQuery,
     page_size: int = PageSizeQuery,
+    q: str | None = None,
+    city_id: uuid.UUID | None = None,
+    source_type: str | None = None,
+    language: Language | None = None,
 ) -> PaginatedResponse[AdminHistoricalDocumentResponse]:
     offset = (page - 1) * page_size
-    documents = await service.list_historical_documents(offset=offset, limit=page_size)
-    total = await service.count_historical_documents()
+    documents = await service.list_historical_documents(
+        q=q, city_id=city_id, source_type=source_type, language=language, offset=offset, limit=page_size
+    )
+    total = await service.count_historical_documents(
+        q=q, city_id=city_id, source_type=source_type, language=language
+    )
     return PaginatedResponse(data=documents, meta=_meta(page, page_size, total))
 
 
@@ -803,6 +834,38 @@ async def create_historical_document(
 ) -> SuccessResponse[AdminHistoricalDocumentResponse]:
     document = await service.create_historical_document(data)
     return SuccessResponse(message="Historical document created and indexed", data=document)
+
+
+@router.post(
+    "/historical-documents/upload",
+    response_model=SuccessResponse[AdminHistoricalDocumentResponse],
+    summary="Upload a PDF/DOCX/TXT/Markdown file, extract its text, and index it for the AI historian",
+)
+async def upload_historical_document(
+    _admin_user: AdminUser,
+    service: Annotated[AdminService, Depends(get_admin_service)],
+    file: Annotated[UploadFile, File()],
+    source: Annotated[str, Form()],
+    source_type: Annotated[DocumentSourceType, Form()] = DocumentSourceType.SECONDARY,
+    language: Annotated[Language, Form()] = Language.KAZAKH,
+    title: Annotated[str | None, Form()] = None,
+    author: Annotated[str | None, Form()] = None,
+    year: Annotated[str | None, Form()] = None,
+    city_id: Annotated[uuid.UUID | None, Form()] = None,
+    group_key: Annotated[uuid.UUID | None, Form()] = None,
+) -> SuccessResponse[AdminHistoricalDocumentResponse]:
+    document = await service.create_historical_document_from_file(
+        file=file,
+        title=title,
+        source=source,
+        source_type=source_type,
+        author=author,
+        year=year,
+        language=language,
+        city_id=city_id,
+        group_key=group_key,
+    )
+    return SuccessResponse(message="File uploaded, extracted, and indexed", data=document)
 
 
 @router.patch(
@@ -847,10 +910,11 @@ async def list_certificates(
     service: Annotated[AdminService, Depends(get_admin_service)],
     page: int = PageQuery,
     page_size: int = PageSizeQuery,
+    q: str | None = None,
 ) -> PaginatedResponse[CertificateResponse]:
     offset = (page - 1) * page_size
-    certificates = await service.list_certificates(offset=offset, limit=page_size)
-    total = await service.count_certificates()
+    certificates = await service.list_certificates(q=q, offset=offset, limit=page_size)
+    total = await service.count_certificates(q=q)
     return PaginatedResponse(data=certificates, meta=_meta(page, page_size, total))
 
 
@@ -923,10 +987,11 @@ async def list_achievements(
     service: Annotated[AdminService, Depends(get_admin_service)],
     page: int = PageQuery,
     page_size: int = PageSizeQuery,
+    q: str | None = None,
 ) -> PaginatedResponse[AchievementResponse]:
     offset = (page - 1) * page_size
-    achievements = await service.list_achievements(offset=offset, limit=page_size)
-    total = await service.count_achievements()
+    achievements = await service.list_achievements(q=q, offset=offset, limit=page_size)
+    total = await service.count_achievements(q=q)
     return PaginatedResponse(data=achievements, meta=_meta(page, page_size, total))
 
 
@@ -986,6 +1051,165 @@ async def delete_achievement(
     return SuccessResponse(message="Achievement revoked")
 
 
+# ─── Achievement definitions (catalog) ───────────────────────────────────────
+
+
+@router.get(
+    "/achievement-definitions",
+    response_model=PaginatedResponse[AdminAchievementDefinitionResponse],
+    summary="List achievement definitions",
+)
+async def list_achievement_definitions(
+    _admin_user: AdminUser,
+    service: Annotated[AdminService, Depends(get_admin_service)],
+    page: int = PageQuery,
+    page_size: int = PageSizeQuery,
+    q: str | None = None,
+    metric: str | None = None,
+    is_active: bool | None = None,
+) -> PaginatedResponse[AdminAchievementDefinitionResponse]:
+    offset = (page - 1) * page_size
+    definitions = await service.list_achievement_definitions(
+        q=q, metric=metric, is_active=is_active, offset=offset, limit=page_size
+    )
+    total = await service.count_achievement_definitions(q=q, metric=metric, is_active=is_active)
+    return PaginatedResponse(data=definitions, meta=_meta(page, page_size, total))
+
+
+@router.get(
+    "/achievement-definitions/{definition_id}",
+    response_model=SuccessResponse[AdminAchievementDefinitionResponse],
+    summary="Get an achievement definition by ID",
+)
+async def get_achievement_definition(
+    definition_id: uuid.UUID,
+    _admin_user: AdminUser,
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> SuccessResponse[AdminAchievementDefinitionResponse]:
+    return SuccessResponse(data=await service.get_achievement_definition(definition_id))
+
+
+@router.post(
+    "/achievement-definitions",
+    response_model=SuccessResponse[AdminAchievementDefinitionResponse],
+    summary="Create an achievement definition",
+)
+async def create_achievement_definition(
+    data: AdminAchievementDefinitionCreateRequest,
+    _admin_user: AdminUser,
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> SuccessResponse[AdminAchievementDefinitionResponse]:
+    definition = await service.create_achievement_definition(data)
+    return SuccessResponse(message="Achievement definition created", data=definition)
+
+
+@router.patch(
+    "/achievement-definitions/{definition_id}",
+    response_model=SuccessResponse[AdminAchievementDefinitionResponse],
+    summary="Update an achievement definition",
+)
+async def update_achievement_definition(
+    definition_id: uuid.UUID,
+    data: AdminAchievementDefinitionUpdateRequest,
+    _admin_user: AdminUser,
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> SuccessResponse[AdminAchievementDefinitionResponse]:
+    definition = await service.update_achievement_definition(definition_id, data)
+    return SuccessResponse(message="Achievement definition updated", data=definition)
+
+
+@router.delete(
+    "/achievement-definitions/{definition_id}",
+    response_model=SuccessResponse[None],
+    summary="Delete an achievement definition",
+)
+async def delete_achievement_definition(
+    definition_id: uuid.UUID,
+    _admin_user: AdminUser,
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> SuccessResponse[None]:
+    await service.delete_achievement_definition(definition_id)
+    return SuccessResponse(message="Achievement definition deleted")
+
+
+# ─── Historical figures ──────────────────────────────────────────────────────
+
+
+@router.get(
+    "/historical-figures",
+    response_model=PaginatedResponse[AdminHistoricalFigureResponse],
+    summary="List historical figures",
+)
+async def list_historical_figures(
+    _admin_user: AdminUser,
+    service: Annotated[AdminService, Depends(get_admin_service)],
+    page: int = PageQuery,
+    page_size: int = PageSizeQuery,
+    q: str | None = None,
+    city_id: uuid.UUID | None = None,
+) -> PaginatedResponse[AdminHistoricalFigureResponse]:
+    offset = (page - 1) * page_size
+    figures = await service.list_historical_figures(q=q, city_id=city_id, offset=offset, limit=page_size)
+    total = await service.count_historical_figures(q=q, city_id=city_id)
+    return PaginatedResponse(data=figures, meta=_meta(page, page_size, total))
+
+
+@router.get(
+    "/historical-figures/{figure_id}",
+    response_model=SuccessResponse[AdminHistoricalFigureResponse],
+    summary="Get a historical figure by ID",
+)
+async def get_historical_figure(
+    figure_id: uuid.UUID,
+    _admin_user: AdminUser,
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> SuccessResponse[AdminHistoricalFigureResponse]:
+    return SuccessResponse(data=await service.get_historical_figure(figure_id))
+
+
+@router.post(
+    "/historical-figures",
+    response_model=SuccessResponse[AdminHistoricalFigureResponse],
+    summary="Create a historical figure",
+)
+async def create_historical_figure(
+    data: AdminHistoricalFigureCreateRequest,
+    _admin_user: AdminUser,
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> SuccessResponse[AdminHistoricalFigureResponse]:
+    figure = await service.create_historical_figure(data)
+    return SuccessResponse(message="Historical figure created", data=figure)
+
+
+@router.patch(
+    "/historical-figures/{figure_id}",
+    response_model=SuccessResponse[AdminHistoricalFigureResponse],
+    summary="Update a historical figure",
+)
+async def update_historical_figure(
+    figure_id: uuid.UUID,
+    data: AdminHistoricalFigureUpdateRequest,
+    _admin_user: AdminUser,
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> SuccessResponse[AdminHistoricalFigureResponse]:
+    figure = await service.update_historical_figure(figure_id, data)
+    return SuccessResponse(message="Historical figure updated", data=figure)
+
+
+@router.delete(
+    "/historical-figures/{figure_id}",
+    response_model=SuccessResponse[None],
+    summary="Delete a historical figure",
+)
+async def delete_historical_figure(
+    figure_id: uuid.UUID,
+    _admin_user: AdminUser,
+    service: Annotated[AdminService, Depends(get_admin_service)],
+) -> SuccessResponse[None]:
+    await service.delete_historical_figure(figure_id)
+    return SuccessResponse(message="Historical figure deleted")
+
+
 # ─── Suggested prompts ───────────────────────────────────────────────────────
 
 
@@ -999,10 +1223,15 @@ async def list_suggested_prompts(
     service: Annotated[AdminService, Depends(get_admin_service)],
     page: int = PageQuery,
     page_size: int = PageSizeQuery,
+    q: str | None = None,
+    language: Language | None = None,
+    is_active: bool | None = None,
 ) -> PaginatedResponse[SuggestedPromptResponse]:
     offset = (page - 1) * page_size
-    prompts = await service.list_suggested_prompts(offset=offset, limit=page_size)
-    total = await service.count_suggested_prompts()
+    prompts = await service.list_suggested_prompts(
+        q=q, language=language, is_active=is_active, offset=offset, limit=page_size
+    )
+    total = await service.count_suggested_prompts(q=q, language=language, is_active=is_active)
     return PaginatedResponse(data=prompts, meta=_meta(page, page_size, total))
 
 
