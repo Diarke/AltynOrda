@@ -4,6 +4,7 @@ import logging
 
 from app.ai.client import GroqClient
 from app.ai.prompts import (
+    GENERAL_HISTORIAN_SYSTEM_PROMPT,
     HISTORIAN_SYSTEM_PROMPT,
     INSUFFICIENT_CONTEXT_RESPONSES,
     LANGUAGE_NAMES,
@@ -45,6 +46,26 @@ class AIService:
             messages=messages,
             system_prompt=system_prompt,
         )
+        response = await self._client.complete(request)
+        return response.content
+
+    async def generate_general_response(
+        self,
+        user_message: str,
+        *,
+        chat_history: list[AIChatMessage] | None = None,
+        language: Language = Language.ENGLISH,
+    ) -> str:
+        """Generate a historian response from the model's own general knowledge, used
+        when no verified RAG context is available (retrieval failed, or found nothing
+        relevant) — keeps the AI Historian answering instead of refusing outright."""
+        language_name = LANGUAGE_NAMES[language.value]
+        system_prompt = GENERAL_HISTORIAN_SYSTEM_PROMPT.format(language_name=language_name)
+
+        messages: list[AIChatMessage] = list(chat_history or [])
+        messages.append(AIChatMessage(role="user", content=user_message))
+
+        request = AICompletionRequest(messages=messages, system_prompt=system_prompt)
         response = await self._client.complete(request)
         return response.content
 

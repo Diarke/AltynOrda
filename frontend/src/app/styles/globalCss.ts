@@ -46,6 +46,8 @@ export const GLOBAL_CSS = `
   .gold-hover:hover { box-shadow:0 0 40px rgba(212,175,55,0.2),0 0 80px rgba(212,175,55,0.06);border-color:rgba(212,175,55,0.35)!important; }
   .gold-glow-text { text-shadow:0 0 30px rgba(212,175,55,0.6); }
   .teal-glow { box-shadow:0 0 24px rgba(87,214,209,0.35); }
+  .teal-hover:not(:disabled) { transition:all 0.25s ease; }
+  .teal-hover:not(:disabled):hover { box-shadow:0 0 28px rgba(87,214,209,0.45); transform:scale(1.05); }
 
   .animate-float { animation:float 7s ease-in-out infinite; }
   .animate-pulse-gold { animation:pulse-gold 2.5s ease-in-out infinite; }

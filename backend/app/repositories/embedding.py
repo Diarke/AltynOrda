@@ -38,13 +38,17 @@ class EmbeddingRepository(BaseRepository[DocumentEmbedding]):
             """
             params["city_id"] = str(city_id)
 
+        # `CAST(:embedding AS vector)` instead of the `:embedding::vector` cast shorthand —
+        # asyncpg's prepared-statement handling chokes on a `::` cast operator sitting directly
+        # against a named bind parameter (`PostgresSyntaxError: syntax error at or near ":"`).
+        # CAST(...) is unambiguous SQL and compiles cleanly through SQLAlchemy's asyncpg dialect.
         sql = text(f"""
-            SELECT de.id, 1 - (de.embedding <=> :embedding::vector) AS similarity
+            SELECT de.id, 1 - (de.embedding <=> CAST(:embedding AS vector)) AS similarity
             FROM document_embeddings de
             JOIN historical_documents hd ON hd.id = de.document_id
-            WHERE 1 - (de.embedding <=> :embedding::vector) >= :threshold
+            WHERE 1 - (de.embedding <=> CAST(:embedding AS vector)) >= :threshold
             {city_filter}
-            ORDER BY de.embedding <=> :embedding::vector
+            ORDER BY de.embedding <=> CAST(:embedding AS vector)
             LIMIT :top_k
         """)
 

@@ -327,7 +327,8 @@
     "aiLabel": "ORDA AI",
     "placeholder": "Ask the Oracle about the Golden Horde...",
     "disclaimer": "AI responses are based on verified historical scholarship · 13th–15th century CE",
-    "greeting": "As-salamu alaykum, traveler. I am ORDA, your guide through the ages of the Great Steppe. Ask me of khans and caravans, of golden cities and forgotten battles — I am here to illuminate the past with the light of knowledge."
+    "greeting": "As-salamu alaykum, traveler. I am ORDA, your guide through the ages of the Great Steppe. Ask me of khans and caravans, of golden cities and forgotten battles — I am here to illuminate the past with the light of knowledge.",
+    "sendMessage": "Send message"
   },
   "artifactGallery": {
     "title": "Artifact Collection",

@@ -27,9 +27,9 @@ import {
 import {
   Map, Package, Award, MessageSquare, ChevronRight, Compass, ScrollText,
   ShoppingBag, Globe, Settings, User, ArrowRight, Play,
-  Mic, Send, X, Menu, ChevronDown, Shield, Crown, BookOpen, Clock,
+  Send, X, Menu, ChevronDown, Shield, Crown, BookOpen, Clock,
   MapPin, Download, Share2, Check, ChevronLeft, Star, Eye, Mountain,
-  Volume2, Paperclip, TrendingUp, Wind, Zap, Feather, LogOut, Camera, Bell
+  Volume2, TrendingUp, Wind, Zap, Feather, LogOut, Camera, Bell
 } from "lucide-react";
 import { GLOBAL_CSS } from "./styles/globalCss";
 import { GlobalSearchTrigger } from "./components/GlobalSearch";
@@ -2165,6 +2165,16 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-grow the textarea only as the user actually types multiple lines — capped at
+  // 140px, then it scrolls internally instead of growing further.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, [input]);
 
   // Deep-link from global search: land here with the picked suggested question prefilled.
   useEffect(() => {
@@ -2200,11 +2210,11 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
     : (t("aiHistorian.suggestions", { returnObjects: true }) as string[]);
 
   return (
-    <div className="min-h-screen pt-16 flex flex-col" style={{ background: "#0F1115" }}>
-      <div className="flex-1 max-w-3xl mx-auto w-full px-4 py-6 flex flex-col">
+    <div className="h-screen pt-16 flex flex-col overflow-hidden" style={{ background: "#0F1115" }}>
+      <div className="flex-1 min-h-0 max-w-[900px] mx-auto w-full px-4 sm:px-6 flex flex-col">
 
         {/* Header */}
-        <div className="flex items-center gap-4 mb-8 animate-fade-in">
+        <div className="flex items-center gap-4 py-4 flex-shrink-0 animate-fade-in">
           <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/5 transition-colors"
             style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
             <ChevronLeft size={16} color="#B7BAC3" />
@@ -2225,25 +2235,25 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
           <div className="badge-teal">{t("aiHistorian.beta")}</div>
         </div>
 
-        {/* Suggested questions (show initially) */}
-        {messages.length === 1 && (
-          <div className="mb-6 animate-slide-up">
-            <p className="text-xs orda-cinzel tracking-widest text-[#B7BAC3] mb-3">{t("aiHistorian.suggestedQuestions")}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {suggestions.map((s) => (
-                <button key={s} onClick={() => { setInput(s); }}
-                  className="text-left p-3 rounded-[14px] text-xs orda-inter text-[#B7BAC3] hover:text-[#F6F4EC] transition-all gold-hover"
-                  style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <ChevronRight size={12} className="inline mr-1 text-[#D4AF37]" />
-                  {s}
-                </button>
-              ))}
+        {/* Scrollable messages area — the only part of this view that scrolls */}
+        <div className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-1">
+          {/* Suggested questions (show initially) */}
+          {messages.length === 1 && (
+            <div className="animate-slide-up">
+              <p className="text-xs orda-cinzel tracking-widest text-[#B7BAC3] mb-3">{t("aiHistorian.suggestedQuestions")}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {suggestions.map((s) => (
+                  <button key={s} onClick={() => { setInput(s); }}
+                    className="text-left p-3 rounded-[14px] text-xs orda-inter text-[#B7BAC3] hover:text-[#F6F4EC] transition-all gold-hover"
+                    style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <ChevronRight size={12} className="inline mr-1 text-[#D4AF37]" />
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Messages */}
-        <div className="flex-1 space-y-4 overflow-y-auto mb-4 pr-1">
           {messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} ai-bubble`}
               style={{ animationDelay: "0s" }}>
@@ -2290,33 +2300,31 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
-        <div className="animate-slide-up" style={{ animationDelay: "0.2s" }}>
-          <div className="flex items-end gap-3 p-4 rounded-[20px]"
+        {/* Compact input bar — fixed at the bottom of the flex column, never scrolls */}
+        <div className="flex-shrink-0 py-4 animate-slide-up" style={{ animationDelay: "0.2s" }}>
+          <div className="flex items-center gap-2 pl-5 pr-2 py-2 rounded-[20px]"
             style={{ background: "rgba(34,38,47,0.6)", border: "1px solid rgba(255,255,255,0.08)" }}>
-            <button className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 hover:bg-white/5 transition-colors">
-              <Paperclip size={16} color="#B7BAC3" />
-            </button>
             <textarea
-              className="flex-1 bg-transparent outline-none text-sm text-[#F6F4EC] orda-inter placeholder-[#B7BAC3] resize-none leading-relaxed"
+              ref={textareaRef}
+              className="flex-1 bg-transparent outline-none text-sm text-[#F6F4EC] orda-inter placeholder-[#B7BAC3] resize-none leading-relaxed py-[15px] max-h-[140px] overflow-y-auto"
               placeholder={t("aiHistorian.placeholder")}
-              rows={2}
+              rows={1}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
             />
-            <div className="flex flex-col gap-2 flex-shrink-0">
-              <button className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/5 transition-colors">
-                <Mic size={16} color="#B7BAC3" />
-              </button>
-              <button onClick={send}
-                className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
-                style={{ background: input.trim() ? "linear-gradient(135deg,#57D6D1,#3ABAB5)" : "rgba(87,214,209,0.1)", boxShadow: input.trim() ? "0 4px 16px rgba(87,214,209,0.3)" : "none" }}>
-                <Send size={15} color={input.trim() ? "#0F1115" : "#57D6D1"} />
-              </button>
-            </div>
+            <button onClick={send} disabled={!input.trim()}
+              aria-label={t("aiHistorian.sendMessage")}
+              className="teal-hover w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all"
+              style={{
+                background: input.trim() ? "linear-gradient(135deg,#57D6D1,#3ABAB5)" : "rgba(87,214,209,0.08)",
+                boxShadow: input.trim() ? "0 4px 20px rgba(87,214,209,0.35)" : "none",
+                cursor: input.trim() ? "pointer" : "not-allowed",
+              }}>
+              <Send size={16} color={input.trim() ? "#0F1115" : "#4A4D57"} />
+            </button>
           </div>
-          <p className="text-center text-[10px] orda-inter text-[#B7BAC3] mt-3">
+          <p className="text-center text-[10px] orda-inter text-[#B7BAC3] mt-2">
             {t("aiHistorian.disclaimer")}
           </p>
         </div>
