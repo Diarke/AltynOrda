@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router";
 import { motion, useInView, useScroll, useTransform } from "motion/react";
 import { useTranslation, type TFunction } from "react-i18next";
@@ -2329,12 +2330,53 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
 // triggered it (dashboard, city page, gallery) — no navigation away is required.
 function ArtifactDetailModal({ artifact, onClose }: { artifact: Artifact | null; onClose: () => void }) {
   const { t } = useTranslation();
+
+  // Close on Escape and lock background scroll while open. Freezing the body in
+  // place with `position: fixed` (rather than just `overflow: hidden`) is required
+  // here — plain `overflow: hidden` resets body's scrollTop to 0 immediately in
+  // most browsers, which is exactly the "loses scroll position" bug this guards against.
+  useEffect(() => {
+    if (!artifact) return;
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const previous = { position: body.style.position, top: body.style.top, width: body.style.width, overflow: body.style.overflow };
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      body.style.position = previous.position;
+      body.style.top = previous.top;
+      body.style.width = previous.width;
+      body.style.overflow = previous.overflow;
+      window.removeEventListener("keydown", handleKey);
+      // Restoring scroll has to wait a frame — the browser hasn't relaid-out body
+      // back to its full scrollable height yet in this same synchronous tick (it's
+      // still collapsed from `position: fixed`), so an immediate scrollTo clamps to
+      // whatever short height it briefly reports. `behavior: "instant"` overrides the
+      // app's global `scroll-behavior: smooth` on <html>, which would otherwise
+      // animate this restoration into view.
+      requestAnimationFrame(() => {
+        window.scrollTo({ left: 0, top: scrollY, behavior: "instant" });
+      });
+    };
+  }, [artifact, onClose]);
+
   if (!artifact) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(16px)" }}
+
+  // Rendered into document.body via a portal so `position: fixed` is always relative
+  // to the real viewport — several ancestors up the tree run a `transform`-based
+  // entrance animation (e.g. `.view-enter`), and any ancestor with a non-"none"
+  // transform creates a new containing block that would otherwise hijack "fixed"
+  // positioning and center the modal against page content instead of the viewport.
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center sm:p-4"
+      style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(16px)" }}
       onClick={onClose}>
-      <div className="max-w-lg w-full rounded-[24px] p-8 animate-scale-in"
+      <div
+        className="w-full max-w-lg rounded-t-[24px] sm:rounded-[24px] p-6 sm:p-8 animate-slide-up sm:animate-scale-in max-h-[90vh] overflow-y-auto fixed bottom-0 left-0 right-0 sm:static"
         style={{ background: "#171A20", border: "1px solid rgba(212,175,55,0.15)", boxShadow: "0 0 80px rgba(212,175,55,0.1)" }}
         onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start mb-6">
@@ -2343,7 +2385,7 @@ function ArtifactDetailModal({ artifact, onClose }: { artifact: Artifact | null;
             <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC] mt-2">{artifact.name}</h2>
             <p className="orda-inter text-sm text-[#B7BAC3]">{artifact.category}</p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-white/5">
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-white/5 flex-shrink-0">
             <X size={16} color="#B7BAC3" />
           </button>
         </div>
@@ -2364,7 +2406,8 @@ function ArtifactDetailModal({ artifact, onClose }: { artifact: Artifact | null;
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
