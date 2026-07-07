@@ -12,12 +12,14 @@ import {
   useCity,
   useCityGallery,
   useHomepageContent,
+  useNotifications,
   useProgress,
   useQuests,
   useSuggestedPrompts,
   type ApiArtifact,
   type ApiCity,
   type ApiLanguage,
+  type ApiNotification,
   type ApiProgressSummary,
   type ApiQuest,
 } from "./lib/api";
@@ -26,21 +28,21 @@ import {
   ShoppingBag, Globe, Settings, User, ArrowRight, Play,
   Mic, Send, X, Menu, ChevronDown, Shield, Crown, BookOpen, Clock,
   MapPin, Download, Share2, Check, ChevronLeft, Star, Eye, Mountain,
-  Volume2, Paperclip, TrendingUp, Wind, Zap, Feather, LogOut, Camera
+  Volume2, Paperclip, TrendingUp, Wind, Zap, Feather, LogOut, Camera, Bell
 } from "lucide-react";
 import { GLOBAL_CSS } from "./styles/globalCss";
 import { GlobalSearchTrigger } from "./components/GlobalSearch";
-import { NotificationBell } from "./components/NotificationCenter";
+import { NotificationBell, TYPE_ICON, TYPE_TARGET, formatRelativeTime } from "./components/NotificationCenter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "landing" | "chars" | "intro" | "auth" | "dashboard" | "city" | "ai" | "artifacts" | "quests" | "certificate" | "passport" | "privacy" | "terms" | "contacts";
+type View = "landing" | "chars" | "intro" | "auth" | "dashboard" | "city" | "ai" | "artifacts" | "quests" | "certificate" | "passport" | "notifications" | "privacy" | "terms" | "contacts";
 type CharType = "merchant" | "diplomat" | "explorer";
 
 // ─── Route access control ──────────────────────────────────────────────────────
 // Protected: require an authenticated session. Guest-only: only for signed-out
 // visitors (e.g. redirect an already-logged-in user away from the auth screen).
 // Admin: reserved for admin-only views (none exist yet in this app).
-const PROTECTED_VIEWS: View[] = ["dashboard", "city", "ai", "artifacts", "quests", "certificate", "passport"];
+const PROTECTED_VIEWS: View[] = ["dashboard", "city", "ai", "artifacts", "quests", "certificate", "passport", "notifications"];
 const GUEST_ONLY_VIEWS: View[] = ["auth"];
 const ADMIN_VIEWS: View[] = [];
 
@@ -65,6 +67,7 @@ const VIEW_PATHS: Record<Exclude<View, "city">, string> = {
   quests: "/quests",
   certificate: "/certificate",
   passport: "/passport",
+  notifications: "/notifications",
   privacy: "/privacy",
   terms: "/terms",
   contacts: "/contacts",
@@ -412,7 +415,7 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
     return () => window.removeEventListener("scroll", h);
   }, []);
 
-  const inApp = ["dashboard", "city", "ai", "artifacts", "quests", "certificate", "passport"].includes(view);
+  const inApp = ["dashboard", "city", "ai", "artifacts", "quests", "certificate", "passport", "notifications"].includes(view);
 
   // Highlight the section currently in view while scrolling the landing page.
   useEffect(() => {
@@ -1294,11 +1297,12 @@ function StoryIntro({ character, onBegin }: { character: CharType; onBegin: () =
 type MapLayerKey = "cities" | "rivers" | "tradeRoutes" | "borders";
 const MAP_INTRO_STORAGE_KEY = "orda-map-intro-seen";
 
-function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs }: {
+function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs, cityProgress }: {
   cities: City[];
   onSelectCity: (city: City) => void;
   journey?: CharType;
   completedCitySlugs?: Set<string>;
+  cityProgress?: Record<string, { percent: number; status: "not_started" | "in_progress" | "completed" }>;
 }) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState<string | null>(null);
@@ -1494,13 +1498,6 @@ function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs }: {
                   style={{ animation: "pulse-ring 2.2s ease-out infinite" }} />
               )}
 
-              {/* Pulse ring (hover) */}
-              {isHov && (
-                <circle cx={city.cx} cy={city.cy} r={city.size + 12}
-                  fill="none" stroke={city.color} strokeWidth="1" opacity="0.4"
-                  style={{ animation: "pulse-ring 1.5s ease-out infinite" }} />
-              )}
-
               {/* Outer ring */}
               <circle cx={city.cx} cy={city.cy} r={city.size + 4}
                 fill="none"
@@ -1509,13 +1506,13 @@ function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs }: {
                 opacity={isHov ? 0.6 : 0.2}
                 style={{ transition: "all 0.25s ease" }} />
 
-              {/* Main dot */}
+              {/* Main dot — calm hover: soft glow + slight scale, no expanding ripple */}
               <circle cx={city.cx} cy={city.cy} r={city.size}
                 fill={city.color}
                 opacity={isHov ? 1 : 0.7}
                 filter={isHov ? "url(#city-glow)" : "none"}
                 className="city-dot-pulse"
-                style={{ transition: "all 0.25s ease", transform: isHov ? `scale(1.3)` : "scale(1)", transformOrigin: `${city.cx}px ${city.cy}px` }} />
+                style={{ transition: "transform 0.25s ease, opacity 0.25s ease, filter 0.25s ease", transform: isHov ? `scale(1.05)` : "scale(1)", transformOrigin: `${city.cx}px ${city.cy}px`, cursor: "pointer" }} />
 
               {/* Inner dot */}
               <circle cx={city.cx} cy={city.cy} r={city.size * 0.4}
@@ -1558,15 +1555,28 @@ function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs }: {
         </text>
       </svg>
 
-      {/* Hover tooltip */}
+      {/* Hover tooltip — compact, doesn't move the marker */}
       {hovered && (() => {
         const city = visibleCities.find(c => c.id === hovered);
         if (!city) return null;
+        const progress = cityProgress?.[city.slug];
+        const statusLabel = progress
+          ? progress.status === "completed" ? t("map.status.completed")
+          : progress.status === "in_progress" ? t("map.status.inProgress")
+          : t("map.status.notStarted")
+          : null;
+        const statusColor = progress?.status === "completed" ? "#6FCF97" : progress?.status === "in_progress" ? "#57D6D1" : "#B7BAC3";
         return (
           <div className="absolute bottom-4 left-4 right-4 sm:right-auto glass rounded-[14px] px-4 py-3 pointer-events-none animate-fade-in"
-            style={{ maxWidth: "min(240px, 100%)" }}>
+            style={{ maxWidth: "min(260px, 100%)" }}>
             <div className="text-[#D4AF37] text-xs orda-cinzel tracking-widest mb-1 truncate">{city.name}</div>
             <div className="text-[#B7BAC3] text-xs orda-inter truncate">{city.subtitle}</div>
+            {progress && (
+              <div className="flex items-center justify-between mt-2 mb-1">
+                <span className="text-[10px] orda-inter" style={{ color: statusColor }}>{statusLabel}</span>
+                <span className="text-[10px] orda-cinzel text-[#D4AF37]">{progress.percent}%</span>
+              </div>
+            )}
             <div className="text-[#B7BAC3] text-xs orda-inter mt-1">{t("map.clickToExplore")}</div>
           </div>
         );
@@ -1579,13 +1589,16 @@ function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs }: {
 function Dashboard({ character, onSelectCity, onNav }: {
   character: CharType; onSelectCity: (c: City) => void; onNav: (v: View) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const char = getCharacterData(t)[character];
 
   const { data: citiesData, isLoading: citiesLoading } = useCities();
   const { data: artifactsData, isLoading: artifactsLoading } = useArtifacts();
   const { data: questsData, isLoading: questsLoading } = useQuests();
   const { summaryQuery, statsQuery, achievementsQuery } = useProgress();
+  const { notificationsQuery } = useNotifications();
+  const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
+  const [mobileSheet, setMobileSheet] = useState<"left" | "right" | null>(null);
   const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
   const cityNameById = (id: string) => cities.find(c => c.id === id)?.name || t("common.unknown");
   const artifacts = (artifactsData?.data || [])
@@ -1606,7 +1619,8 @@ function Dashboard({ character, onSelectCity, onNav }: {
     .map(q => ({ ...mapApiQuest(q, cityNameById(q.city_id)), completionStatus: q.completion_status }))
     .find(q => q.completionStatus !== "completed") || null;
 
-  const achievements = achievementsQuery.data || [];
+  const achievements = (achievementsQuery.data || []).slice(0, 3);
+  const notifications = (notificationsQuery.data?.data || []).slice(0, 3);
 
   // A city counts as "completed" for the map's route coloring once the player has
   // finished at least one quest there — the same real progress data already
@@ -1618,12 +1632,39 @@ function Dashboard({ character, onSelectCity, onNav }: {
       .filter((slug): slug is string => Boolean(slug))
   );
 
+  // Per-city completion %, feeding the map tooltip's status/percent lines —
+  // `Map` the class is shadowed by the lucide-react icon import in this file.
+  const questsByCityId = new globalThis.Map<string, ApiQuest[]>();
+  (questsData?.data || []).forEach((q) => {
+    const list = questsByCityId.get(q.city_id) || [];
+    list.push(q);
+    questsByCityId.set(q.city_id, list);
+  });
+  const cityProgress: Record<string, { percent: number; status: "not_started" | "in_progress" | "completed" }> = {};
+  cities.forEach((city) => {
+    const cityQuests = questsByCityId.get(city.id) || [];
+    const total = cityQuests.length;
+    const completed = cityQuests.filter((q) => q.completion_status === "completed").length;
+    const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const status: "not_started" | "in_progress" | "completed" =
+      total === 0 || completed === 0 ? "not_started" : completed === total ? "completed" : "in_progress";
+    cityProgress[city.slug] = { percent, status };
+  });
+
+  const closeMobileSheet = () => setMobileSheet(null);
+
   return (
-    <div className="min-h-screen pt-16 flex flex-col" style={{ background: "#0F1115" }}>
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[260px_1fr_280px] gap-0 lg:max-h-[calc(100vh-64px)]">
+    <div className="h-screen pt-16 flex flex-col overflow-hidden" style={{ background: "#0F1115" }}>
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[260px_1fr_280px] gap-0 overflow-hidden">
+
+        {/* Mobile drawer backdrop */}
+        {mobileSheet && (
+          <div className="fixed inset-0 z-30 md:hidden" style={{ background: "rgba(0,0,0,0.6)" }} onClick={closeMobileSheet} />
+        )}
 
         {/* Left Sidebar */}
-        <aside className="order-2 lg:order-1 lg:overflow-y-auto border-b lg:border-b-0 lg:border-r flex flex-col gap-4 p-5"
+        <aside
+          className={`${mobileSheet === "left" ? "flex fixed inset-x-0 bottom-0 z-40 max-h-[70vh] rounded-t-[24px] animate-slide-up" : "hidden"} md:flex md:static md:max-h-none md:rounded-none md:z-auto order-2 md:order-1 overflow-y-auto border-b md:border-b-0 md:border-r flex-col gap-4 p-5`}
           style={{ borderColor: "rgba(255,255,255,0.06)", background: "#0D1017" }}>
 
           {/* Character badge */}
@@ -1661,7 +1702,10 @@ function Dashboard({ character, onSelectCity, onNav }: {
 
           {/* Current Quest */}
           <div>
-            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-3 px-1">{t("dashboard.activeQuest")}</div>
+            <div className="flex items-center justify-between mb-3 px-1">
+              <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">{t("dashboard.activeQuest")}</span>
+              <button onClick={() => onNav("quests")} className="text-[10px] text-[#D4AF37] orda-inter hover:opacity-70">{t("common.seeAll")}</button>
+            </div>
             {questsLoading ? (
               <div className="rounded-[14px] p-4" style={{ background: "rgba(15,17,21,0.5)", border: "1px solid rgba(255,255,255,0.04)" }}>
                 <div className="h-3 w-32 rounded-full mb-2" style={{ background: "rgba(255,255,255,0.05)" }} />
@@ -1705,7 +1749,8 @@ function Dashboard({ character, onSelectCity, onNav }: {
                     <div className="h-2 w-28 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
                   </div>
                 ) : (
-                  <div key={a.id} className="flex items-center gap-3 p-2.5 rounded-xl cursor-pointer hover:bg-white/[0.03] transition-colors">
+                  <div key={a.id} className="flex items-center gap-3 p-2.5 rounded-xl cursor-pointer hover:bg-white/[0.03] transition-colors"
+                    onClick={() => setSelectedArtifact(a)}>
                     <span className="text-lg">{a.icon}</span>
                     <div>
                       <div className="text-[#F6F4EC] text-xs orda-cinzel">{a.name}</div>
@@ -1719,7 +1764,10 @@ function Dashboard({ character, onSelectCity, onNav }: {
 
           {/* Achievements */}
           <div>
-            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-3 px-1">{t("dashboard.achievementsLabel")}</div>
+            <div className="flex items-center justify-between mb-3 px-1">
+              <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">{t("dashboard.achievementsLabel")}</span>
+              <button onClick={() => onNav("passport")} className="text-[10px] text-[#D4AF37] orda-inter hover:opacity-70">{t("common.seeAll")}</button>
+            </div>
             <div className="space-y-2">
               {achievementsQuery.isLoading ? (
                 Array.from({ length: 2 }).map((_, i) => (
@@ -1747,16 +1795,16 @@ function Dashboard({ character, onSelectCity, onNav }: {
         </aside>
 
         {/* Map Center */}
-        <main className="order-1 lg:order-2 p-4 flex flex-col overflow-hidden min-h-[460px] lg:min-h-0">
-          <div className="mb-4">
+        <main className="order-1 lg:order-2 p-4 flex flex-col overflow-hidden min-h-[360px] relative">
+          <div className="mb-3">
             <h2 className="orda-cinzel text-base font-bold text-[#F6F4EC] tracking-wider">{t("dashboard.interactiveMap")}</h2>
             <p className="text-xs text-[#B7BAC3] orda-inter">{t("dashboard.mapSubtitle")}</p>
           </div>
-          <div className="flex-1">
-            <InteractiveMap cities={cities} onSelectCity={onSelectCity} journey={character} completedCitySlugs={completedCitySlugs} />
+          <div className="flex-1 min-h-0">
+            <InteractiveMap cities={cities} onSelectCity={onSelectCity} journey={character} completedCitySlugs={completedCitySlugs} cityProgress={cityProgress} />
           </div>
           {/* City quick-access row */}
-          <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
+          <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
             {(citiesLoading ? Array.from({ length: 6 }) : cities).map((city, index) => (
               citiesLoading || !city ? (
                 <div key={`city-skeleton-${index}`} className="rounded-[12px] px-3 py-2 h-9 w-24 flex-shrink-0" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }} />
@@ -1770,34 +1818,24 @@ function Dashboard({ character, onSelectCity, onNav }: {
               )
             ))}
           </div>
+
+          {/* Mobile sidebar toggles */}
+          <div className="md:hidden absolute bottom-20 left-3 right-3 flex justify-between pointer-events-none">
+            <button onClick={() => setMobileSheet(mobileSheet === "left" ? null : "left")}
+              className="pointer-events-auto glass rounded-full px-4 py-2 text-[11px] orda-cinzel tracking-wide text-[#D4AF37] flex items-center gap-1.5">
+              <Zap size={12} /> {t("dashboard.mobileQuestsPanel")}
+            </button>
+            <button onClick={() => setMobileSheet(mobileSheet === "right" ? null : "right")}
+              className="pointer-events-auto glass rounded-full px-4 py-2 text-[11px] orda-cinzel tracking-wide text-[#D4AF37] flex items-center gap-1.5">
+              <Bell size={12} /> {t("dashboard.mobileProgressPanel")}
+            </button>
+          </div>
         </main>
 
         {/* Right Panel */}
-        <aside className="order-3 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l flex flex-col gap-4 p-5"
+        <aside
+          className={`${mobileSheet === "right" ? "flex fixed inset-x-0 bottom-0 z-40 max-h-[70vh] rounded-t-[24px] animate-slide-up" : "hidden"} lg:flex lg:static lg:max-h-none lg:rounded-none lg:z-auto order-3 overflow-y-auto border-t lg:border-t-0 lg:border-l flex-col gap-4 p-5`}
           style={{ borderColor: "rgba(255,255,255,0.06)", background: "#0D1017" }}>
-
-          {/* AI Assistant teaser */}
-          <div className="rounded-[16px] p-5 cursor-pointer gold-hover"
-            style={{ background: "rgba(87,214,209,0.05)", border: "1px solid rgba(87,214,209,0.15)" }}
-            onClick={() => onNav("ai")}>
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center teal-glow"
-                style={{ background: "rgba(87,214,209,0.12)", border: "1px solid rgba(87,214,209,0.2)" }}>
-                <MessageSquare size={16} color="#57D6D1" />
-              </div>
-              <div>
-                <div className="text-sm orda-cinzel text-[#57D6D1]">{t("dashboard.aiTeaserTitle")}</div>
-                <div className="text-[10px] orda-inter text-[#B7BAC3]">{t("dashboard.aiTeaserSubtitle")}</div>
-              </div>
-            </div>
-            <p className="text-xs text-[#B7BAC3] orda-inter leading-relaxed line-clamp-3">
-              {t("dashboard.aiTeaserQuote")}
-            </p>
-            <button className="mt-3 w-full py-2 rounded-xl text-xs orda-cinzel tracking-widest transition-colors"
-              style={{ background: "rgba(87,214,209,0.1)", color: "#57D6D1", border: "1px solid rgba(87,214,209,0.15)" }}>
-              {t("dashboard.openAiHistorian")}
-            </button>
-          </div>
 
           {/* Progress rings */}
           <div className="rounded-[16px] p-4" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -1830,37 +1868,41 @@ function Dashboard({ character, onSelectCity, onNav }: {
           </div>
 
           {/* Notifications */}
-          <div>
-            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-3 px-1">{t("dashboard.notifications")}</div>
+          <div className="flex-1 min-h-0">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">{t("dashboard.notifications")}</span>
+              <button onClick={() => onNav("notifications")} className="text-[10px] text-[#D4AF37] orda-inter hover:opacity-70">{t("common.seeAll")}</button>
+            </div>
             <div className="space-y-2">
-              {[
-                { icon: "⚜", text: t("dashboard.notification1"), time: t("dashboard.timeAgo2m"), color: "#D4AF37" },
-                { icon: "🏺", text: t("dashboard.notification2"), time: t("dashboard.timeAgo1h"), color: "#6FCF97" },
-                { icon: "📜", text: t("dashboard.notification3"), time: t("dashboard.timeAgo3h"), color: "#57D6D1" },
-              ].map((n, i) => (
-                <div key={i} className="flex items-start gap-3 p-3 rounded-xl hover:bg-white/[0.02] cursor-pointer transition-colors">
-                  <span className="text-base mt-0.5">{n.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs orda-inter text-[#F6F4EC] leading-relaxed">{n.text}</p>
-                    <span className="text-[10px] orda-inter text-[#B7BAC3]">{n.time}</span>
-                  </div>
-                </div>
-              ))}
+              {notificationsQuery.isLoading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <div key={`notification-skeleton-${i}`} className="h-12 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }} />
+                ))
+              ) : notifications.length > 0 ? (
+                notifications.map((n) => {
+                  const Icon = TYPE_ICON[n.type] ?? Bell;
+                  return (
+                    <div key={n.id} className="flex items-start gap-3 p-3 rounded-xl hover:bg-white/[0.02] cursor-pointer transition-colors"
+                      onClick={() => onNav("notifications")}>
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                        style={{ background: n.is_read ? "rgba(255,255,255,0.04)" : "rgba(212,175,55,0.12)" }}>
+                        <Icon size={13} color={n.is_read ? "#B7BAC3" : "#D4AF37"} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs orda-inter text-[#F6F4EC] leading-relaxed line-clamp-2">{n.title}</p>
+                        <span className="text-[10px] orda-inter text-[#B7BAC3]">{formatRelativeTime(n.created_at, i18n.resolvedLanguage || "en")}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-[11px] orda-inter text-[#B7BAC3] px-1">{t("dashboard.noNotifications")}</p>
+              )}
             </div>
-          </div>
-
-          {/* Certificate teaser */}
-          <div className="rounded-[16px] p-4 mt-auto cursor-pointer hover:opacity-80 transition-opacity"
-            style={{ background: "rgba(212,175,55,0.04)", border: "1px solid rgba(212,175,55,0.1)" }}
-            onClick={() => onNav("certificate")}>
-            <div className="flex items-center gap-2 mb-2">
-              <Award size={16} color="#D4AF37" />
-              <span className="text-sm orda-cinzel text-[#D4AF37]">{t("dashboard.certificate")}</span>
-            </div>
-            <p className="text-xs text-[#B7BAC3] orda-inter">{t("dashboard.certificateTeaser")}</p>
           </div>
         </aside>
       </div>
+      <ArtifactDetailModal artifact={selectedArtifact} onClose={() => setSelectedArtifact(null)} />
     </div>
   );
 }
@@ -1871,6 +1913,7 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
   const { data: artifactsData, isLoading: artifactsLoading } = useArtifacts();
   const artifacts = (artifactsData?.data || []).filter((artifact) => artifact.city_id === city.id).slice(0, 3);
   const [activeTab, setActiveTab] = useState<"overview" | "timeline" | "gallery" | "stats">("overview");
+  const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
   const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
   const { data: galleryData, isLoading: galleryLoading } = useCityGallery(city.id, language);
   const galleryImages = galleryData || [];
@@ -2015,7 +2058,9 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
                       <div className="h-2 w-16 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
                     </div>
                   ) : (
-                    <div key={a.id} className="rounded-[14px] p-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                    <div key={a.id} className="rounded-[14px] p-4 cursor-pointer hover:bg-white/[0.03] transition-colors"
+                      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}
+                      onClick={() => setSelectedArtifact(mapApiArtifact(a, city.name, t))}>
                       <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#D4AF37] mb-1">{a.era}</div>
                       <div className="text-sm orda-cinzel text-[#F6F4EC]">{a.name}</div>
                     </div>
@@ -2100,6 +2145,7 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
           </div>
         )}
       </div>
+      <ArtifactDetailModal artifact={selectedArtifact} onClose={() => setSelectedArtifact(null)} />
     </div>
   );
 }
@@ -2279,6 +2325,49 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
 }
 
 // ─── ARTIFACT GALLERY ─────────────────────────────────────────────────────────
+// Shared modal for viewing a single artifact's details inline, over whatever page
+// triggered it (dashboard, city page, gallery) — no navigation away is required.
+function ArtifactDetailModal({ artifact, onClose }: { artifact: Artifact | null; onClose: () => void }) {
+  const { t } = useTranslation();
+  if (!artifact) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(16px)" }}
+      onClick={onClose}>
+      <div className="max-w-lg w-full rounded-[24px] p-8 animate-scale-in"
+        style={{ background: "#171A20", border: "1px solid rgba(212,175,55,0.15)", boxShadow: "0 0 80px rgba(212,175,55,0.1)" }}
+        onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-start mb-6">
+          <div>
+            <RarityBadge rarity={artifact.rarity} />
+            <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC] mt-2">{artifact.name}</h2>
+            <p className="orda-inter text-sm text-[#B7BAC3]">{artifact.category}</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-white/5">
+            <X size={16} color="#B7BAC3" />
+          </button>
+        </div>
+
+        <div className="aspect-video rounded-[16px] flex items-center justify-center mb-6"
+          style={{ background: "rgba(15,17,21,0.6)", border: "1px solid rgba(255,255,255,0.04)" }}>
+          <span className="text-8xl">{artifact.icon}</span>
+        </div>
+
+        <p className="orda-inter text-sm text-[#B7BAC3] leading-[1.8] mb-6">{artifact.description}</p>
+
+        <div className="grid grid-cols-2 gap-3">
+          {[[t("artifactGallery.found"), artifact.found], [t("artifactGallery.city"), artifact.city]].map(([k, v]) => (
+            <div key={k} className="p-3 rounded-[12px]" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
+              <div className="text-[10px] orda-cinzel tracking-widest text-[#B7BAC3] mb-1">{k}</div>
+              <div className="text-sm orda-cinzel text-[#F6F4EC]">{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ArtifactGallery({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation();
   const location = useLocation();
@@ -2373,43 +2462,7 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
-      {/* Artifact modal */}
-      {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(16px)" }}
-          onClick={() => setSelected(null)}>
-          <div className="max-w-lg w-full rounded-[24px] p-8 animate-scale-in"
-            style={{ background: "#171A20", border: "1px solid rgba(212,175,55,0.15)", boxShadow: "0 0 80px rgba(212,175,55,0.1)" }}
-            onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <RarityBadge rarity={selected.rarity} />
-                <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC] mt-2">{selected.name}</h2>
-                <p className="orda-inter text-sm text-[#B7BAC3]">{selected.category}</p>
-              </div>
-              <button onClick={() => setSelected(null)} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-white/5">
-                <X size={16} color="#B7BAC3" />
-              </button>
-            </div>
-
-            <div className="aspect-video rounded-[16px] flex items-center justify-center mb-6"
-              style={{ background: "rgba(15,17,21,0.6)", border: "1px solid rgba(255,255,255,0.04)" }}>
-              <span className="text-8xl">{selected.icon}</span>
-            </div>
-
-            <p className="orda-inter text-sm text-[#B7BAC3] leading-[1.8] mb-6">{selected.description}</p>
-
-            <div className="grid grid-cols-2 gap-3">
-              {[[t("artifactGallery.found"), selected.found], [t("artifactGallery.city"), selected.city]].map(([k, v]) => (
-                <div key={k} className="p-3 rounded-[12px]" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
-                  <div className="text-[10px] orda-cinzel tracking-widest text-[#B7BAC3] mb-1">{k}</div>
-                  <div className="text-sm orda-cinzel text-[#F6F4EC]">{v}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      <ArtifactDetailModal artifact={selected} onClose={() => setSelected(null)} />
     </div>
   );
 }
@@ -3148,6 +3201,90 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
   );
 }
 
+// ─── NOTIFICATIONS PAGE ────────────────────────────────────────────────────────
+function NotificationsPage({ onBack }: { onBack: () => void }) {
+  const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  const { notificationsQuery, unreadCountQuery, markReadMutation, markAllReadMutation, deleteMutation } = useNotifications();
+  const notifications = notificationsQuery.data?.data || [];
+  const unreadCount = unreadCountQuery.data?.unread_count ?? 0;
+
+  const handleSelect = (notification: ApiNotification) => {
+    if (!notification.is_read) markReadMutation.mutate(notification.id);
+    const target = TYPE_TARGET[notification.type];
+    if (target) navigate(target);
+  };
+
+  return (
+    <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#0F1115" }}>
+      <div className="max-w-2xl mx-auto px-6 py-10">
+        <div className="flex items-center gap-4 mb-10">
+          <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/5 transition-colors"
+            style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
+            <ChevronLeft size={16} color="#B7BAC3" />
+          </button>
+          <div className="flex-1">
+            <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC]">{t("notificationsPage.title")}</h1>
+            <p className="orda-inter text-sm text-[#B7BAC3] mt-1">{t("notificationsPage.subtitle")}</p>
+          </div>
+          {unreadCount > 0 && (
+            <button onClick={() => markAllReadMutation.mutate()}
+              className="flex items-center gap-1.5 text-xs orda-inter text-[#D4AF37] hover:text-[#F6F4EC] transition-colors flex-shrink-0">
+              <Check size={13} /> {t("notificationCenter.markAllRead")}
+            </button>
+          )}
+        </div>
+
+        {notificationsQuery.isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-16 rounded-[16px]" style={{ background: "rgba(34,38,47,0.4)" }} />
+            ))}
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="rounded-[20px] p-10 text-center" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <Bell size={24} color="#B7BAC3" className="mx-auto mb-3" />
+            <p className="orda-inter text-sm text-[#B7BAC3]">{t("notificationCenter.empty")}</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {notifications.map((notification) => {
+              const Icon = TYPE_ICON[notification.type] ?? Bell;
+              return (
+                <div key={notification.id}
+                  className="group relative flex items-start gap-3 p-4 rounded-[16px] cursor-pointer transition-colors hover:bg-white/[0.03]"
+                  style={{ background: "rgba(34,38,47,0.4)", border: `1px solid ${notification.is_read ? "rgba(255,255,255,0.06)" : "rgba(212,175,55,0.2)"}` }}
+                  onClick={() => handleSelect(notification)}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: notification.is_read ? "rgba(255,255,255,0.04)" : "rgba(212,175,55,0.12)", border: `1px solid ${notification.is_read ? "rgba(255,255,255,0.06)" : "rgba(212,175,55,0.25)"}` }}>
+                    <Icon size={16} color={notification.is_read ? "#B7BAC3" : "#D4AF37"} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="orda-cinzel text-sm text-[#F6F4EC] truncate">{notification.title}</span>
+                      {!notification.is_read && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#57D6D1" }} />}
+                    </div>
+                    <p className="orda-inter text-xs text-[#B7BAC3] leading-relaxed mt-0.5">{notification.message}</p>
+                    <span className="orda-inter text-[10px] text-[#6B6E77] mt-1 block">
+                      {formatRelativeTime(notification.created_at, i18n.resolvedLanguage || "en")}
+                    </span>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(notification.id); }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/5 flex-shrink-0"
+                    aria-label={t("notificationCenter.delete")}>
+                    <X size={13} color="#B7BAC3" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── STATIC PAGES (Privacy / Terms / Contacts) ────────────────────────────────
 function LegalPage({ page, onNav }: { page: "privacy" | "terms"; onNav: (v: View) => void }) {
   const { t } = useTranslation();
@@ -3320,6 +3457,9 @@ export default function App() {
         )}
         {view === "passport" && (
           <Passport onBack={goBack} onLogout={() => navigate("landing")} />
+        )}
+        {view === "notifications" && (
+          <NotificationsPage onBack={goBack} />
         )}
         {view === "privacy" && <LegalPage page="privacy" onNav={navigate} />}
         {view === "terms" && <LegalPage page="terms" onNav={navigate} />}

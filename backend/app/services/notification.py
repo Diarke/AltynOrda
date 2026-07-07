@@ -12,10 +12,11 @@ from typing import Callable
 from app.core.unit_of_work import UnitOfWork
 from app.enums import Language, NotificationType
 from app.exceptions import NotFoundException
-from app.i18n.messages import render_notification
+from app.i18n.messages import render_certificate, render_notification
 from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.notification import NotificationResponse
+from app.utils.i18n import resolve_localized
 
 
 async def notify(
@@ -37,6 +38,7 @@ async def notify(
         message=message,
         entity_type=entity_type,
         entity_id=entity_id,
+        params=template_kwargs or None,
     )
     return await uow.notifications.create(notification)
 
@@ -74,12 +76,18 @@ class NotificationService:
         self._uow = uow
 
     async def list_for_user(
-        self, user_id: uuid.UUID, *, unread_only: bool = False, offset: int = 0, limit: int = 20
+        self,
+        user_id: uuid.UUID,
+        *,
+        unread_only: bool = False,
+        offset: int = 0,
+        limit: int = 20,
+        language: Language | None = None,
     ) -> list[NotificationResponse]:
         notifications = await self._uow.notifications.get_by_user(
             user_id, unread_only=unread_only, offset=offset, limit=limit
         )
-        return [self._to_response(n) for n in notifications]
+        return [await self._to_response(n, language) for n in notifications]
 
     async def count_for_user(self, user_id: uuid.UUID, *, unread_only: bool = False) -> int:
         return await self._uow.notifications.count_by_user(user_id, unread_only=unread_only)
@@ -91,7 +99,50 @@ class NotificationService:
         notification.is_read = True
         updated = await self._uow.notifications.update(notification)
         await self._uow.session.commit()
-        return self._to_response(updated)
+        return await self._to_response(updated)
+
+    async def _resolve_live_label(
+        self, entity_type: str | None, entity_id: uuid.UUID | None, language: Language
+    ) -> str | None:
+        """Re-resolve the proper noun embedded in a notification (artifact name,
+        achievement title, quest title, certificate title) against its live source
+        entity, so switching language never leaves that name stuck in the language
+        it was originally awarded in."""
+        if entity_type is None or entity_id is None:
+            return None
+        if entity_type == "artifact":
+            artifact = await self._uow.artifacts.get_by_id(entity_id)
+            return resolve_localized(artifact, "name", language) if artifact else None
+        if entity_type == "achievement_definition":
+            definition = await self._uow.achievement_definitions.get_by_id(entity_id)
+            return resolve_localized(definition, "title", language) if definition else None
+        if entity_type == "quest":
+            quest = await self._uow.quests.get_by_id(entity_id)
+            return resolve_localized(quest, "title", language) if quest else None
+        if entity_type == "certificate":
+            certificate = await self._uow.certificates.get_by_id(entity_id)
+            if certificate is None:
+                return None
+            recipient = await self._uow.users.get_by_id(certificate.user_id)
+            display_name = (recipient.full_name or recipient.username) if recipient else ""
+            title, _ = render_certificate(language, name=display_name, percent=certificate.completion_percent)
+            return title
+        return None
+
+    async def _render(self, notification: Notification, language: Language | None) -> tuple[str, str]:
+        if language is None or not notification.params:
+            return notification.title, notification.message
+        kwargs = dict(notification.params)
+        live_label = await self._resolve_live_label(notification.entity_type, notification.entity_id, language)
+        if live_label is not None:
+            if "title" in kwargs:
+                kwargs["title"] = live_label
+            elif "name" in kwargs:
+                kwargs["name"] = live_label
+        try:
+            return render_notification(NotificationType(notification.type), language, **kwargs)
+        except (KeyError, ValueError):
+            return notification.title, notification.message
 
     async def mark_all_read(self, user_id: uuid.UUID) -> int:
         count = await self._uow.notifications.mark_all_read(user_id)
@@ -105,13 +156,15 @@ class NotificationService:
         await self._uow.notifications.delete(notification)
         await self._uow.session.commit()
 
-    @staticmethod
-    def _to_response(notification: Notification) -> NotificationResponse:
+    async def _to_response(
+        self, notification: Notification, language: Language | None = None
+    ) -> NotificationResponse:
+        title, message = await self._render(notification, language)
         return NotificationResponse(
             id=notification.id,
             type=notification.type,
-            title=notification.title,
-            message=notification.message,
+            title=title,
+            message=message,
             entity_type=notification.entity_type,
             entity_id=notification.entity_id,
             is_read=notification.is_read,

@@ -228,6 +228,11 @@
       "rivers": "Rivers",
       "tradeRoutes": "Trade Routes",
       "borders": "Historical Borders"
+    },
+    "status": {
+      "completed": "Completed",
+      "inProgress": "In progress",
+      "notStarted": "Not started"
     }
   },
   "dashboard": {
@@ -242,24 +247,15 @@
     "noAchievements": "Complete quests to earn your first achievement.",
     "interactiveMap": "Interactive Map",
     "mapSubtitle": "Golden Horde Territory · Select a city to explore",
-    "aiTeaserTitle": "AI Historian",
-    "aiTeaserSubtitle": "Ask anything",
-    "aiTeaserQuote": "\"The Golden Horde was arguably the most cosmopolitan empire of the 13th century. Ask me about its trade, politics, or art...\"",
-    "openAiHistorian": "Open AI Historian →",
     "explorerLevel": "EXPLORER LEVEL",
     "journeyLabel": "Journey",
     "questsLabel": "Quests",
     "level": "Level {{level}}",
     "xpEarned": "{{xp}} XP earned",
     "notifications": "NOTIFICATIONS",
-    "notification1": "New quest unlocked in Sarai Batu",
-    "notification2": "Artifact discovered: Golden Jug",
-    "notification3": "AI has new insights about Bolgar",
-    "timeAgo2m": "2m ago",
-    "timeAgo1h": "1h ago",
-    "timeAgo3h": "3h ago",
-    "certificate": "Certificate",
-    "certificateTeaser": "Complete your journey to earn your Explorer certificate"
+    "mobileQuestsPanel": "Quests & Artifacts",
+    "mobileProgressPanel": "Progress & Alerts",
+    "noNotifications": "No notifications yet."
   },
   "city": {
     "backToMap": "Back to Map",
@@ -528,5 +524,9 @@
     "markAllRead": "Mark all as read",
     "empty": "No notifications yet.",
     "delete": "Delete notification"
+  },
+  "notificationsPage": {
+    "title": "Notifications",
+    "subtitle": "Everything that's happened on your journey."
   }
 }

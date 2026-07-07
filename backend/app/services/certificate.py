@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from app.constants import CERTIFICATE_MIN_COMPLETION_PERCENT
 from app.core.unit_of_work import UnitOfWork
-from app.enums import NotificationType, QuestStatus
+from app.enums import Language, NotificationType, QuestStatus
 from app.exceptions import ValidationException
 from app.i18n.messages import render_certificate
 from app.models.certificate import Certificate
@@ -65,9 +65,19 @@ class CertificateService:
         )
         return self._to_response(created)
 
-    async def get_user_certificates(self, user: User) -> list[CertificateResponse]:
+    async def get_user_certificates(
+        self, user: User, language: Language | None = None
+    ) -> list[CertificateResponse]:
         certs = await self._uow.certificates.get_by_user(user.id)
-        return [self._to_response(c) for c in certs]
+        resolved_language = language or user.language
+        display_name = user.full_name or user.username
+        responses = []
+        for cert in certs:
+            title, description = render_certificate(
+                resolved_language, name=display_name, percent=cert.completion_percent
+            )
+            responses.append(self._to_response(cert, title=title, description=description))
+        return responses
 
     async def verify_certificate(self, code: str) -> CertificateResponse:
         cert = await self._uow.certificates.get_by_code(code)
@@ -82,12 +92,14 @@ class CertificateService:
         return f"ORDA-{secrets.token_hex(8).upper()}"
 
     @staticmethod
-    def _to_response(cert: Certificate) -> CertificateResponse:
+    def _to_response(
+        cert: Certificate, *, title: str | None = None, description: str | None = None
+    ) -> CertificateResponse:
         return CertificateResponse(
             id=cert.id,
             user_id=cert.user_id,
-            title=cert.title,
-            description=cert.description,
+            title=title if title is not None else cert.title,
+            description=description if description is not None else cert.description,
             completion_percent=cert.completion_percent,
             certificate_code=cert.certificate_code,
             issued_at=cert.issued_at,

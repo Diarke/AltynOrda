@@ -2,10 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.auth.dependencies import UserOrAdmin
 from app.dependencies.services import get_certificate_service
+from app.enums import Language
 from app.schemas.certificate import CertificateCreateRequest, CertificateResponse
 from app.schemas.common import SuccessResponse
 from app.services.certificate import CertificateService
@@ -35,6 +36,7 @@ async def issue_certificate(
 async def list_certificates(
     current_user: UserOrAdmin,
     service: Annotated[CertificateService, Depends(get_certificate_service)],
+    language: Language | None = Query(default=None),
 ) -> SuccessResponse[list[CertificateResponse]]:
-    certs = await service.get_user_certificates(current_user)
+    certs = await service.get_user_certificates(current_user, language)
     return SuccessResponse(data=certs)

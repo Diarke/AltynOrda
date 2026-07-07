@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.auth.dependencies import UserOrAdmin
 from app.dependencies.services import get_progress_service
+from app.enums import Language
 from app.schemas.common import SuccessResponse
 from app.schemas.progress import (
     AchievementResponse,
@@ -59,8 +60,9 @@ async def create_progress(
 async def list_achievements(
     current_user: UserOrAdmin,
     service: Annotated[ProgressService, Depends(get_progress_service)],
+    language: Language | None = Query(default=None),
 ) -> SuccessResponse[list[AchievementResponse]]:
-    achievements = await service.list_achievements(current_user)
+    achievements = await service.list_achievements(current_user, language)
     return SuccessResponse(data=achievements)
 
 
@@ -72,8 +74,9 @@ async def list_achievements(
 async def get_progress_stats(
     current_user: UserOrAdmin,
     service: Annotated[ProgressService, Depends(get_progress_service)],
+    language: Language | None = Query(default=None),
 ) -> SuccessResponse[ProgressStatsResponse]:
-    stats = await service.get_progress_stats(current_user)
+    stats = await service.get_progress_stats(current_user, language)
     return SuccessResponse(data=stats)
 
 

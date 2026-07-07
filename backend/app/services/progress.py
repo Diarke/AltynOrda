@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.constants import AVATAR_FRAME_CATALOG, PLAYER_TITLES
 from app.core.unit_of_work import UnitOfWork
-from app.enums import AchievementMetric, NotificationType, ProgressType, QuestStatus
+from app.enums import AchievementMetric, Language, NotificationType, ProgressType, QuestStatus
 from app.exceptions import ConflictException, NotFoundException, ValidationException
 from app.models.achievement import Achievement
 from app.models.progress import Progress
@@ -117,27 +117,40 @@ class ProgressService:
             name=resolve_localized(artifact, "name", user.language),
         )
 
-    async def get_progress_stats(self, user: User) -> ProgressStatsResponse:
+    async def get_progress_stats(
+        self, user: User, language: Language | None = None
+    ) -> ProgressStatsResponse:
         await self._uow.users.get_by_id(user.id)
         return ProgressStatsResponse(
             user_id=user.id,
             level=user.level,
-            title=self._get_title(user.level, user.language.value),
+            title=self._get_title(user.level, (language or user.language).value),
             xp=user.xp,
             coins=user.coins,
             streak_days=user.streak_days,
             unlocks=self._get_unlocks(user.level),
         )
 
-    async def list_achievements(self, user: User) -> list[AchievementResponse]:
+    async def list_achievements(
+        self, user: User, language: Language | None = None
+    ) -> list[AchievementResponse]:
         achievements = await self._uow.achievements.get_by_user(user.id)
+        resolved_language = language or user.language
         return [
             AchievementResponse(
                 id=achievement.id,
                 user_id=achievement.user_id,
                 achievement_type=achievement.achievement_type,
-                title=achievement.title,
-                description=achievement.description,
+                title=(
+                    resolve_localized(achievement.definition, "title", resolved_language)
+                    if achievement.definition is not None
+                    else achievement.title
+                ),
+                description=(
+                    resolve_localized(achievement.definition, "description", resolved_language)
+                    if achievement.definition is not None
+                    else achievement.description
+                ),
                 icon_url=achievement.icon_url,
                 reward_xp=achievement.reward_xp,
                 reward_coins=achievement.reward_coins,

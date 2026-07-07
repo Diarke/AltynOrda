@@ -436,12 +436,12 @@ export async function getProgressSummary() {
   return request<ApiProgressSummary>("/progress");
 }
 
-export async function getProgressStats() {
-  return request<ApiProgressStats>("/progress/stats");
+export async function getProgressStats(language: ApiLanguage = "kk") {
+  return request<ApiProgressStats>(`/progress/stats?language=${language}`);
 }
 
-export async function listAchievements() {
-  return request<ApiAchievement[]>("/progress/achievements");
+export async function listAchievements(language: ApiLanguage = "kk") {
+  return request<ApiAchievement[]>(`/progress/achievements?language=${language}`);
 }
 
 export async function completeQuest(questId: string) {
@@ -450,8 +450,8 @@ export async function completeQuest(questId: string) {
   });
 }
 
-export async function listCertificates() {
-  return request<ApiCertificate[]>("/certificates");
+export async function listCertificates(language: ApiLanguage = "kk") {
+  return request<ApiCertificate[]>(`/certificates?language=${language}`);
 }
 
 export async function issueCertificate(input: { title?: string }) {
@@ -478,9 +478,14 @@ export async function globalSearch(query: string, language: ApiLanguage) {
   );
 }
 
-export async function listNotifications(page = 1, pageSize = 30, unreadOnly = false) {
+export async function listNotifications(
+  page = 1,
+  pageSize = 30,
+  unreadOnly = false,
+  language: ApiLanguage = "kk"
+) {
   return request<PaginatedResponse<ApiNotification>>(
-    `/notifications?page=${page}&page_size=${pageSize}&unread_only=${unreadOnly}`
+    `/notifications?page=${page}&page_size=${pageSize}&unread_only=${unreadOnly}&language=${language}`
   );
 }
 
@@ -649,6 +654,8 @@ export function useQuests(page = 1, pageSize = 20) {
 
 export function useProgress(enabled = true) {
   const queryClient = useQueryClient();
+  const { i18n } = useTranslation();
+  const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
   const summaryQuery = useQuery({
     queryKey: ["progress", "summary"],
     queryFn: getProgressSummary,
@@ -658,16 +665,16 @@ export function useProgress(enabled = true) {
   });
 
   const statsQuery = useQuery({
-    queryKey: ["progress", "stats"],
-    queryFn: getProgressStats,
+    queryKey: ["progress", "stats", language],
+    queryFn: () => getProgressStats(language),
     enabled: Boolean(getAccessToken()) && enabled,
     staleTime: 30_000,
     retry: 2,
   });
 
   const achievementsQuery = useQuery({
-    queryKey: ["progress", "achievements"],
-    queryFn: listAchievements,
+    queryKey: ["progress", "achievements", language],
+    queryFn: () => listAchievements(language),
     enabled: Boolean(getAccessToken()) && enabled,
     staleTime: 30_000,
     retry: 2,
@@ -725,9 +732,11 @@ export function useProgress(enabled = true) {
 
 export function useCertificates(enabled = true) {
   const queryClient = useQueryClient();
+  const { i18n } = useTranslation();
+  const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
   const certificatesQuery = useQuery({
-    queryKey: ["certificates"],
-    queryFn: listCertificates,
+    queryKey: ["certificates", language],
+    queryFn: () => listCertificates(language),
     enabled: Boolean(getAccessToken()) && enabled,
     staleTime: 5 * 60_000,
     retry: 2,
@@ -791,11 +800,13 @@ const NOTIFICATIONS_POLL_INTERVAL = 30_000;
 
 export function useNotifications(enabled = true) {
   const queryClient = useQueryClient();
+  const { i18n } = useTranslation();
+  const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
   const authed = Boolean(getAccessToken()) && enabled;
 
   const notificationsQuery = useQuery({
-    queryKey: ["notifications", "list"],
-    queryFn: () => listNotifications(1, 30, false),
+    queryKey: ["notifications", "list", language],
+    queryFn: () => listNotifications(1, 30, false, language),
     enabled: authed,
     staleTime: 15_000,
     refetchInterval: NOTIFICATIONS_POLL_INTERVAL,

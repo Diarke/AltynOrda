@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Bell, Zap, Award, Package, ScrollText, Compass, Star, X, Check } from "lucide-react";
 import { useNotifications, type ApiNotification } from "../lib/api";
 
-const TYPE_ICON: Record<string, typeof Bell> = {
+export const TYPE_ICON: Record<string, typeof Bell> = {
   quest_available: Zap,
   achievement_unlocked: Award,
   artifact_discovered: Package,
@@ -13,7 +13,7 @@ const TYPE_ICON: Record<string, typeof Bell> = {
   daily_reward: Star,
 };
 
-const TYPE_TARGET: Record<string, string> = {
+export const TYPE_TARGET: Record<string, string> = {
   quest_available: "/quests",
   achievement_unlocked: "/passport",
   artifact_discovered: "/artifacts",
@@ -22,7 +22,7 @@ const TYPE_TARGET: Record<string, string> = {
   daily_reward: "/passport",
 };
 
-function formatRelativeTime(iso: string, locale: string): string {
+export function formatRelativeTime(iso: string, locale: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diffMs / 60_000);
   if (minutes < 1) return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(0, "minute");

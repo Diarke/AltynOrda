@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from app.auth.dependencies import CurrentUser
 from app.core.unit_of_work import UnitOfWork
 from app.dependencies.database import get_uow
+from app.enums import Language
 from app.schemas.common import PaginatedMeta, PaginatedResponse, SuccessResponse
 from app.schemas.notification import NotificationResponse, UnreadCountResponse
 from app.services.notification import NotificationService
@@ -36,10 +37,11 @@ async def list_notifications(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     unread_only: bool = Query(default=False),
+    language: Language | None = Query(default=None),
 ) -> PaginatedResponse[NotificationResponse]:
     offset = (page - 1) * page_size
     notifications = await service.list_for_user(
-        current_user.id, unread_only=unread_only, offset=offset, limit=page_size
+        current_user.id, unread_only=unread_only, offset=offset, limit=page_size, language=language
     )
     total = await service.count_for_user(current_user.id, unread_only=unread_only)
     return PaginatedResponse(data=notifications, meta=_meta(page, page_size, total))

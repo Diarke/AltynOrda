@@ -1,9 +1,9 @@
 """User notification ORM model."""
 
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, ForeignKey, String, Text
+from sqlalchemy import Boolean, ForeignKey, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,5 +32,9 @@ class Notification(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     entity_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    # The template kwargs used to render `title`/`message` at creation time, kept so the
+    # notification can be re-rendered live if the recipient later switches language.
+    # Null for rows created before this column existed, or for templates with no kwargs.
+    params: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     user: Mapped["User"] = relationship("User")
