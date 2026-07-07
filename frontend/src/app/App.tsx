@@ -34,6 +34,7 @@ import {
 import { GLOBAL_CSS } from "./styles/globalCss";
 import { GlobalSearchTrigger } from "./components/GlobalSearch";
 import { NotificationBell, TYPE_ICON, TYPE_TARGET, formatRelativeTime } from "./components/NotificationCenter";
+import { useActiveCity } from "./context/ActiveCityContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type View = "landing" | "chars" | "intro" | "auth" | "dashboard" | "city" | "ai" | "artifacts" | "quests" | "certificate" | "passport" | "notifications" | "privacy" | "terms" | "contacts";
@@ -1298,12 +1299,13 @@ function StoryIntro({ character, onBegin }: { character: CharType; onBegin: () =
 type MapLayerKey = "cities" | "rivers" | "tradeRoutes" | "borders";
 const MAP_INTRO_STORAGE_KEY = "orda-map-intro-seen";
 
-function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs, cityProgress }: {
+function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs, cityProgress, activeCityId }: {
   cities: City[];
   onSelectCity: (city: City) => void;
   journey?: CharType;
   completedCitySlugs?: Set<string>;
   cityProgress?: Record<string, { percent: number; status: "not_started" | "in_progress" | "completed" }>;
+  activeCityId?: string | null;
 }) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState<string | null>(null);
@@ -1486,6 +1488,10 @@ function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs, cit
         {layers.cities && visibleCities.map((city) => {
           const isHov = hovered === city.id;
           const isRecommended = showIntro && city.slug === recommendedSlug;
+          // The one globally active city (from ActiveCityContext) — stays highlighted
+          // here regardless of hover, so the map always agrees with the quest panel,
+          // artifact panel, bottom carousel, and AI historian about which city is "it".
+          const isActive = Boolean(activeCityId) && city.id === activeCityId;
           return (
             <g key={city.id} className="city-marker"
               onClick={() => onSelectCity(city)}
@@ -1499,19 +1505,25 @@ function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs, cit
                   style={{ animation: "pulse-ring 2.2s ease-out infinite" }} />
               )}
 
+              {/* Active-city ring — steady (not pulsing), distinct from the onboarding hint above */}
+              {isActive && (
+                <circle cx={city.cx} cy={city.cy} r={city.size + 8}
+                  fill="none" stroke="#D4AF37" strokeWidth="1.5" opacity="0.8" />
+              )}
+
               {/* Outer ring */}
               <circle cx={city.cx} cy={city.cy} r={city.size + 4}
                 fill="none"
                 stroke={city.color}
-                strokeWidth={isHov ? 1.5 : 0.8}
-                opacity={isHov ? 0.6 : 0.2}
+                strokeWidth={isHov || isActive ? 1.5 : 0.8}
+                opacity={isHov || isActive ? 0.6 : 0.2}
                 style={{ transition: "all 0.25s ease" }} />
 
               {/* Main dot — calm hover: soft glow + slight scale, no expanding ripple */}
               <circle cx={city.cx} cy={city.cy} r={city.size}
                 fill={city.color}
-                opacity={isHov ? 1 : 0.7}
-                filter={isHov ? "url(#city-glow)" : "none"}
+                opacity={isHov || isActive ? 1 : 0.7}
+                filter={isHov || isActive ? "url(#city-glow)" : "none"}
                 className="city-dot-pulse"
                 style={{ transition: "transform 0.25s ease, opacity 0.25s ease, filter 0.25s ease", transform: isHov ? `scale(1.05)` : "scale(1)", transformOrigin: `${city.cx}px ${city.cy}px`, cursor: "pointer" }} />
 
@@ -1521,9 +1533,9 @@ function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs, cit
 
               {/* Label */}
               <text x={city.cx} y={city.cy + city.size + 18}
-                textAnchor="middle" fill={isHov ? city.color : "#B7BAC3"}
+                textAnchor="middle" fill={isHov || isActive ? city.color : "#B7BAC3"}
                 fontSize="10" fontFamily="Cinzel, serif" letterSpacing="1"
-                style={{ transition: "fill 0.2s ease", fontWeight: city.slug === "sarai-batu" ? "700" : "400" }}>
+                style={{ transition: "fill 0.2s ease", fontWeight: isActive || city.slug === "sarai-batu" ? "700" : "400" }}>
                 {city.name.toUpperCase()}
               </text>
             </g>
@@ -1592,6 +1604,7 @@ function Dashboard({ character, onSelectCity, onNav }: {
 }) {
   const { t, i18n } = useTranslation();
   const char = getCharacterData(t)[character];
+  const { activeCityId } = useActiveCity();
 
   const { data: citiesData, isLoading: citiesLoading } = useCities();
   const { data: artifactsData, isLoading: artifactsLoading } = useArtifacts();
@@ -1602,7 +1615,15 @@ function Dashboard({ character, onSelectCity, onNav }: {
   const [mobileSheet, setMobileSheet] = useState<"left" | "right" | null>(null);
   const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
   const cityNameById = (id: string) => cities.find(c => c.id === id)?.name || t("common.unknown");
-  const artifacts = (artifactsData?.data || [])
+  const activeCity = activeCityId ? cities.find(c => c.id === activeCityId) || null : null;
+
+  // Recent Artifacts scopes to the active city once one is selected — everywhere
+  // else in the app does the same, so this panel never shows a city the rest of
+  // the screen disagrees with.
+  const artifactsForCity = activeCityId
+    ? (artifactsData?.data || []).filter(a => a.city_id === activeCityId)
+    : (artifactsData?.data || []);
+  const artifacts = artifactsForCity
     .slice(0, 3)
     .map(a => mapApiArtifact(a, cityNameById(a.city_id), t));
 
@@ -1616,9 +1637,16 @@ function Dashboard({ character, onSelectCity, onNav }: {
   const journeyPercent = Math.round(summary?.completion_percent ?? 0);
   const questsPercent = totalQuests > 0 ? Math.round((questsCompleted / totalQuests) * 100) : 0;
 
-  const activeQuest = (questsData?.data || [])
-    .map(q => ({ ...mapApiQuest(q, cityNameById(q.city_id)), completionStatus: q.completion_status }))
-    .find(q => q.completionStatus !== "completed") || null;
+  // Prefer a quest from the active city once one is selected — same "single source
+  // of truth" rule as everything else on this screen. Falls back to the first
+  // incomplete quest anywhere once no city has been picked yet.
+  const incompleteQuests = (questsData?.data || [])
+    .map(q => ({ ...mapApiQuest(q, cityNameById(q.city_id)), completionStatus: q.completion_status, city_id: q.city_id }))
+    .filter(q => q.completionStatus !== "completed");
+  const activeQuest =
+    (activeCityId ? incompleteQuests.find(q => q.city_id === activeCityId) : undefined) ||
+    incompleteQuests[0] ||
+    null;
 
   const achievements = (achievementsQuery.data || []).slice(0, 3);
   const notifications = (notificationsQuery.data?.data || []).slice(0, 3);
@@ -1679,6 +1707,29 @@ function Dashboard({ character, onSelectCity, onNav }: {
               <div className="text-[#F6F4EC] text-sm font-semibold orda-cinzel">{char.name}</div>
               <div className="text-[10px] text-[#B7BAC3] orda-inter">{char.title}</div>
             </div>
+          </div>
+
+          {/* Active City — the one shared source of truth every other panel here
+              (quests, artifacts, map highlight, bottom carousel) reads from. */}
+          <div className="rounded-[16px] p-4" style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.12)" }}>
+            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-2">{t("dashboard.activeCity")}</div>
+            {activeCity ? (
+              <div>
+                <div className="flex items-center justify-between">
+                  <div className="text-[#F6F4EC] text-sm font-semibold orda-cinzel">{activeCity.name}</div>
+                  <span className="text-[#D4AF37] text-xs orda-cinzel font-semibold">
+                    {cityProgress[activeCity.slug]?.percent ?? 0}%
+                  </span>
+                </div>
+                <p className="text-[10px] orda-inter text-[#B7BAC3] mt-1 truncate">{activeCity.subtitle}</p>
+                <button onClick={() => onSelectCity(activeCity)}
+                  className="mt-2 w-full py-1.5 rounded-lg text-[10px] orda-cinzel tracking-widest text-[#D4AF37] hover:bg-[#D4AF3714] transition-colors">
+                  {t("dashboard.viewCityDetails")}
+                </button>
+              </div>
+            ) : (
+              <p className="text-[11px] orda-inter text-[#B7BAC3]">{t("dashboard.noActiveCity")}</p>
+            )}
           </div>
 
           {/* Journey Progress */}
@@ -1802,9 +1853,9 @@ function Dashboard({ character, onSelectCity, onNav }: {
             <p className="text-xs text-[#B7BAC3] orda-inter">{t("dashboard.mapSubtitle")}</p>
           </div>
           <div className="flex-1 min-h-0">
-            <InteractiveMap cities={cities} onSelectCity={onSelectCity} journey={character} completedCitySlugs={completedCitySlugs} cityProgress={cityProgress} />
+            <InteractiveMap cities={cities} onSelectCity={onSelectCity} journey={character} completedCitySlugs={completedCitySlugs} cityProgress={cityProgress} activeCityId={activeCityId} />
           </div>
-          {/* City quick-access row */}
+          {/* City quick-access row — the active one stays visually distinct from the rest */}
           <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
             {(citiesLoading ? Array.from({ length: 6 }) : cities).map((city, index) => (
               citiesLoading || !city ? (
@@ -1812,7 +1863,11 @@ function Dashboard({ character, onSelectCity, onNav }: {
               ) : (
                 <button key={city.id} onClick={() => onSelectCity(city)}
                   className="flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl text-xs orda-cinzel tracking-wide transition-all hover:border-[#D4AF3750] hover:text-[#D4AF37]"
-                  style={{ background: "rgba(34,38,47,0.6)", border: "1px solid rgba(255,255,255,0.06)", color: "#B7BAC3" }}>
+                  style={{
+                    background: city.id === activeCityId ? "rgba(212,175,55,0.12)" : "rgba(34,38,47,0.6)",
+                    border: `1px solid ${city.id === activeCityId ? "rgba(212,175,55,0.4)" : "rgba(255,255,255,0.06)"}`,
+                    color: city.id === activeCityId ? "#D4AF37" : "#B7BAC3",
+                  }}>
                   <MapPin size={11} color="#D4AF37" />
                   {city.name}
                 </button>
@@ -2159,6 +2214,9 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
   const chatMutation = useChatMutation();
   const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
   const { data: promptsData } = useSuggestedPrompts(language);
+  const { activeCityId, setActiveCityId } = useActiveCity();
+  const { data: citiesData } = useCities();
+  const activeCity = activeCityId ? (citiesData?.data || []).find((c) => c.id === activeCityId) : null;
   const [messages, setMessages] = useState<{ role: "ai" | "user"; text: string }[]>([
     { role: "ai", text: t("aiHistorian.greeting") },
   ]);
@@ -2192,7 +2250,7 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
     setTyping(true);
 
     try {
-      const response = await chatMutation.mutateAsync({ message: userMsg });
+      const response = await chatMutation.mutateAsync({ message: userMsg, cityId: activeCityId });
       setMessages(m => [...m, { role: "ai", text: response.answer }]);
     } catch {
       setMessages(m => [...m, { role: "ai", text: t("aiHistorian.unavailable") }]);
@@ -2234,6 +2292,19 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
           </div>
           <div className="badge-teal">{t("aiHistorian.beta")}</div>
         </div>
+
+        {/* Active-city context — the same activeCityId the map, quest panel, and
+            artifact filtering all share, so the historian's answers stay scoped
+            to whatever city the user was just looking at. */}
+        {activeCity && (
+          <button onClick={() => setActiveCityId(null)}
+            className="self-start flex-shrink-0 inline-flex items-center gap-2 mb-3 px-3 py-1.5 rounded-full text-xs orda-inter transition-colors hover:opacity-80"
+            style={{ background: "rgba(87,214,209,0.1)", color: "#57D6D1", border: "1px solid rgba(87,214,209,0.25)" }}>
+            <MapPin size={11} />
+            {t("aiHistorian.discussingCity", { city: activeCity.name })}
+            <X size={11} />
+          </button>
+        )}
 
         {/* Scrollable messages area — the only part of this view that scrolls */}
         <div className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-1">
@@ -2427,8 +2498,16 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
   const { data: artifactsData, isLoading, error } = useArtifacts();
   const [selected, setSelected] = useState<Artifact | null>(null);
   const [filter, setFilter] = useState("All");
+  const { activeCityId, setActiveCityId } = useActiveCity();
   const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
-  const artifactItems = (artifactsData?.data || []).map((artifact) => mapApiArtifact(artifact, cities.find((city) => city.id === artifact.city_id)?.name || t("common.unknown"), t));
+  const activeCity = activeCityId ? cities.find((c) => c.id === activeCityId) || null : null;
+
+  // Scoped to the globally active city (map, quest panel, AI historian all agree
+  // on the same one) whenever one is selected — clearable via the chip below.
+  const cityScopedArtifacts = activeCityId
+    ? (artifactsData?.data || []).filter((a) => a.city_id === activeCityId)
+    : (artifactsData?.data || []);
+  const artifactItems = cityScopedArtifacts.map((artifact) => mapApiArtifact(artifact, cities.find((city) => city.id === artifact.city_id)?.name || t("common.unknown"), t));
   const categories = ["All", ...Array.from(new Set(artifactItems.map(a => a.category)))];
   const filtered = filter === "All" ? artifactItems : artifactItems.filter(a => a.category === filter);
 
@@ -2456,6 +2535,17 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
             <p className="orda-inter text-sm text-[#B7BAC3] mt-1">{t("artifactGallery.subtitle", { count: artifactItems.length })}</p>
           </div>
         </div>
+
+        {/* Active-city filter chip — same activeCityId the map/quest panel/AI historian share */}
+        {activeCity && (
+          <button onClick={() => setActiveCityId(null)}
+            className="inline-flex items-center gap-2 mb-4 px-3 py-1.5 rounded-full text-xs orda-inter transition-colors hover:opacity-80"
+            style={{ background: "rgba(212,175,55,0.1)", color: "#D4AF37", border: "1px solid rgba(212,175,55,0.25)" }}>
+            <MapPin size={11} />
+            {t("artifactGallery.filteringByCity", { city: activeCity.name })}
+            <X size={11} />
+          </button>
+        )}
 
         {/* Filter tabs */}
         <div className="flex gap-2 flex-wrap mb-8">
@@ -3398,6 +3488,7 @@ export default function App() {
   const location = useLocation();
   const rrNavigate = useNavigate();
   const [character, setCharacter] = useState<CharType>("explorer");
+  const { activeCityId, setActiveCityId } = useActiveCity();
 
   const view = viewForPathname(location.pathname);
   const cityId = view === "city" ? cityIdFromPathname(location.pathname) : null;
@@ -3406,6 +3497,14 @@ export default function App() {
   // it's fetched separately by id rather than derived from the summary list.
   const { data: cityDetailData, isError: cityDetailError, isLoading: cityDetailLoading } = useCity(cityId ?? undefined);
   const selectedCity = cityDetailData ? mapApiCity(cityDetailData, t) : null;
+
+  // The `/city/:id` URL is the shareable/bookmarkable source of truth for that
+  // route — keep the global activeCityId in sync with it whenever it's present,
+  // so navigating directly to a city (or refreshing on one) also becomes "active"
+  // everywhere else (map highlight, quest/artifact panels, AI historian context).
+  useEffect(() => {
+    if (cityId) setActiveCityId(cityId);
+  }, [cityId, setActiveCityId]);
 
   const navigate = (v: View) => {
     const resolved = resolveView(v, isAuthenticated, user?.role ?? null);
@@ -3454,6 +3553,7 @@ export default function App() {
   };
 
   const handleCitySelect = (city: City) => {
+    setActiveCityId(city.id);
     rrNavigate(pathForView("city", city.id));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };

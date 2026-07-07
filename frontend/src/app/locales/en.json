@@ -255,7 +255,10 @@
     "notifications": "NOTIFICATIONS",
     "mobileQuestsPanel": "Quests & Artifacts",
     "mobileProgressPanel": "Progress & Alerts",
-    "noNotifications": "No notifications yet."
+    "noNotifications": "No notifications yet.",
+    "activeCity": "ACTIVE CITY",
+    "noActiveCity": "Select a city on the map to begin.",
+    "viewCityDetails": "View Details →"
   },
   "city": {
     "backToMap": "Back to Map",
@@ -328,7 +331,8 @@
     "placeholder": "Ask the Oracle about the Golden Horde...",
     "disclaimer": "AI responses are based on verified historical scholarship · 13th–15th century CE",
     "greeting": "As-salamu alaykum, traveler. I am ORDA, your guide through the ages of the Great Steppe. Ask me of khans and caravans, of golden cities and forgotten battles — I am here to illuminate the past with the light of knowledge.",
-    "sendMessage": "Send message"
+    "sendMessage": "Send message",
+    "discussingCity": "Discussing: {{city}}"
   },
   "artifactGallery": {
     "title": "Artifact Collection",
@@ -337,7 +341,8 @@
     "unableToLoad": "Unable to load artifacts right now.",
     "found": "Found",
     "city": "City",
-    "noResults": "No artifacts match this filter yet."
+    "noResults": "No artifacts match this filter yet.",
+    "filteringByCity": "Filtering by {{city}}"
   },
   "quests": {
     "title": "Quest Log",
