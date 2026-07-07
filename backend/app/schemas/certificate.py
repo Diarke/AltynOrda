@@ -20,4 +20,5 @@ class CertificateResponse(BaseSchema):
 
 
 class CertificateCreateRequest(BaseSchema):
-    title: str = Field(default="ORDA Historical Journey Certificate", max_length=255)
+    # None means "use the default title for the user's language" (see CERTIFICATE_TEMPLATES).
+    title: str | None = Field(default=None, max_length=255)

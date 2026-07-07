@@ -19,17 +19,32 @@ class City(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     __tablename__ = "cities"
 
-    name: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     slug: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    historical_period: Mapped[str] = mapped_column(String(100), nullable=False)
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    population_estimate: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    significance: Mapped[str | None] = mapped_column(Text, nullable=True)
-    historical_facts: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
-    trade_info: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    name_kk: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
+    name_ru: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    name_en: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description_kk: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description_ru: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description_en: Mapped[str | None] = mapped_column(Text, nullable=True)
+    historical_period_kk: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    historical_period_ru: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    historical_period_en: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    population_estimate_kk: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    population_estimate_ru: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    population_estimate_en: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    significance_kk: Mapped[str | None] = mapped_column(Text, nullable=True)
+    significance_ru: Mapped[str | None] = mapped_column(Text, nullable=True)
+    significance_en: Mapped[str | None] = mapped_column(Text, nullable=True)
+    historical_facts_kk: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    historical_facts_ru: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    historical_facts_en: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    trade_info_kk: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trade_info_ru: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trade_info_en: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     artifacts: Mapped[list["Artifact"]] = relationship(
         "Artifact", back_populates="city", cascade="all, delete-orphan"

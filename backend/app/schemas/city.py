@@ -3,8 +3,6 @@
 import uuid
 from datetime import datetime
 
-from pydantic import Field
-
 from app.schemas.common import BaseSchema
 
 
@@ -41,17 +39,3 @@ class CitySummaryResponse(BaseSchema):
     latitude: float
     longitude: float
     image_url: str | None
-
-
-class CityCreateRequest(BaseSchema):
-    name: str = Field(min_length=1, max_length=255)
-    slug: str = Field(min_length=1, max_length=255)
-    description: str
-    historical_period: str = Field(max_length=100)
-    latitude: float
-    longitude: float
-    image_url: str | None = None
-    population_estimate: str | None = None
-    significance: str | None = None
-    historical_facts: list[str] | None = None
-    trade_info: str | None = None

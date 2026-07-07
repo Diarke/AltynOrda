@@ -17,8 +17,12 @@ class AchievementDefinition(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "achievement_definitions"
 
     key: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
+    title_kk: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    title_ru: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    title_en: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description_kk: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description_ru: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description_en: Mapped[str | None] = mapped_column(Text, nullable=True)
     icon_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     metric: Mapped[str] = mapped_column(String(50), nullable=False)
     threshold: Mapped[int] = mapped_column(Integer, nullable=False)

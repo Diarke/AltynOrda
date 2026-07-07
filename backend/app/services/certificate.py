@@ -7,6 +7,7 @@ from app.constants import CERTIFICATE_MIN_COMPLETION_PERCENT
 from app.core.unit_of_work import UnitOfWork
 from app.enums import NotificationType, QuestStatus
 from app.exceptions import ValidationException
+from app.i18n.messages import render_certificate
 from app.models.certificate import Certificate
 from app.models.user import User
 from app.schemas.certificate import CertificateCreateRequest, CertificateResponse
@@ -39,13 +40,15 @@ class CertificateService:
         if existing:
             return self._to_response(existing[0])
 
+        default_title, description = render_certificate(
+            user.language,
+            name=user.full_name or user.username,
+            percent=completion_percent,
+        )
         certificate = Certificate(
             user_id=user.id,
-            title=data.title,
-            description=(
-                f"Awarded to {user.full_name or user.username} for completing "
-                f"{completion_percent}% of the ORDA Historical Journey."
-            ),
+            title=data.title or default_title,
+            description=description,
             completion_percent=completion_percent,
             certificate_code=self._generate_code(),
             issued_at=datetime.now(UTC).strftime("%Y-%m-%d"),
@@ -55,10 +58,10 @@ class CertificateService:
             self._uow,
             user.id,
             NotificationType.CERTIFICATE_READY,
-            "Certificate ready",
-            f'Your certificate "{created.title}" is ready to download!',
+            user.language,
             entity_type="certificate",
             entity_id=created.id,
+            title=created.title,
         )
         return self._to_response(created)
 

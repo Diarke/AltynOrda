@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import { DEFAULT_LANGUAGE } from "./i18n";
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1").replace(/\/$/, "");
 const AUTH_STORAGE_KEY = "orda-auth";
@@ -402,12 +404,12 @@ export async function uploadAvatar(file: File) {
   });
 }
 
-export async function listCities(page = 1, pageSize = 20) {
-  return request<PaginatedResponse<ApiCity>>(`/cities?page=${page}&page_size=${pageSize}`);
+export async function listCities(page = 1, pageSize = 20, language: ApiLanguage = "kk") {
+  return request<PaginatedResponse<ApiCity>>(`/cities?page=${page}&page_size=${pageSize}&language=${language}`);
 }
 
-export async function getCity(cityId: string) {
-  return request<ApiCity>(`/cities/${cityId}`);
+export async function getCity(cityId: string, language: ApiLanguage = "kk") {
+  return request<ApiCity>(`/cities/${cityId}?language=${language}`);
 }
 
 export async function getCityGallery(cityId: string, language: ApiLanguage) {
@@ -422,12 +424,12 @@ export async function getHomepageContent(section: string, language: ApiLanguage)
   return request<ApiHomepageContent[]>(`/homepage-content?section=${section}&language=${language}`);
 }
 
-export async function listArtifacts(page = 1, pageSize = 20) {
-  return request<PaginatedResponse<ApiArtifact>>(`/artifacts?page=${page}&page_size=${pageSize}`);
+export async function listArtifacts(page = 1, pageSize = 20, language: ApiLanguage = "kk") {
+  return request<PaginatedResponse<ApiArtifact>>(`/artifacts?page=${page}&page_size=${pageSize}&language=${language}`);
 }
 
-export async function listQuests(page = 1, pageSize = 20) {
-  return request<PaginatedResponse<ApiQuest>>(`/quests?page=${page}&page_size=${pageSize}`);
+export async function listQuests(page = 1, pageSize = 20, language: ApiLanguage = "kk") {
+  return request<PaginatedResponse<ApiQuest>>(`/quests?page=${page}&page_size=${pageSize}&language=${language}`);
 }
 
 export async function getProgressSummary() {
@@ -459,10 +461,10 @@ export async function issueCertificate(input: { title?: string }) {
   });
 }
 
-export async function chatWithHistorian(message: string, cityId?: string | null) {
+export async function chatWithHistorian(message: string, cityId?: string | null, language?: ApiLanguage) {
   return request<ApiChatResponse>("/chat", {
     method: "POST",
-    body: JSON.stringify({ message, city_id: cityId }),
+    body: JSON.stringify({ message, city_id: cityId, language }),
   });
 }
 
@@ -564,9 +566,11 @@ export function useAuthSession() {
 }
 
 export function useCities(page = 1, pageSize = 20) {
+  const { i18n } = useTranslation();
+  const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
   return useQuery({
-    queryKey: ["cities", page, pageSize],
-    queryFn: () => listCities(page, pageSize),
+    queryKey: ["cities", page, pageSize, language],
+    queryFn: () => listCities(page, pageSize, language),
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
     retry: 2,
@@ -576,9 +580,11 @@ export function useCities(page = 1, pageSize = 20) {
 // The list endpoint only returns summary fields (no description/significance/facts/trade
 // info) — city detail pages need the full record, fetched separately by id.
 export function useCity(cityId: string | undefined) {
+  const { i18n } = useTranslation();
+  const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
   return useQuery({
-    queryKey: ["city", cityId],
-    queryFn: () => getCity(cityId as string),
+    queryKey: ["city", cityId, language],
+    queryFn: () => getCity(cityId as string, language),
     enabled: Boolean(cityId),
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
@@ -618,9 +624,11 @@ export function useHomepageContent(section: string, language: ApiLanguage) {
 }
 
 export function useArtifacts(page = 1, pageSize = 20) {
+  const { i18n } = useTranslation();
+  const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
   return useQuery({
-    queryKey: ["artifacts", page, pageSize],
-    queryFn: () => listArtifacts(page, pageSize),
+    queryKey: ["artifacts", page, pageSize, language],
+    queryFn: () => listArtifacts(page, pageSize, language),
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
     retry: 2,
@@ -628,9 +636,11 @@ export function useArtifacts(page = 1, pageSize = 20) {
 }
 
 export function useQuests(page = 1, pageSize = 20) {
+  const { i18n } = useTranslation();
+  const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
   return useQuery({
-    queryKey: ["quests", page, pageSize],
-    queryFn: () => listQuests(page, pageSize),
+    queryKey: ["quests", page, pageSize, language],
+    queryFn: () => listQuests(page, pageSize, language),
     staleTime: 30_000,
     gcTime: 10 * 60_000,
     retry: 2,
@@ -742,8 +752,10 @@ export function useCertificates(enabled = true) {
 }
 
 export function useChatMutation() {
+  const { i18n } = useTranslation();
   return useMutation({
-    mutationFn: ({ message, cityId }: { message: string; cityId?: string | null }) => chatWithHistorian(message, cityId),
+    mutationFn: ({ message, cityId }: { message: string; cityId?: string | null }) =>
+      chatWithHistorian(message, cityId, (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage),
     retry: 1,
   });
 }

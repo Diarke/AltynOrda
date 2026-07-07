@@ -3,10 +3,12 @@
 import uuid
 
 from app.core.unit_of_work import UnitOfWork
+from app.enums import Language
 from app.exceptions import NotFoundException
 from app.models.artifact import Artifact
 from app.schemas.artifact import ArtifactResponse
 from app.schemas.common import PaginatedMeta
+from app.utils.i18n import resolve_localized
 
 
 class ArtifactService:
@@ -16,7 +18,12 @@ class ArtifactService:
         self._uow = uow
 
     async def list_artifacts(
-        self, *, page: int = 1, page_size: int = 20, city_id: uuid.UUID | None = None
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        city_id: uuid.UUID | None = None,
+        language: Language = Language.KAZAKH,
     ) -> tuple[list[ArtifactResponse], PaginatedMeta]:
         offset = (page - 1) * page_size
         if city_id is not None:
@@ -31,29 +38,31 @@ class ArtifactService:
             artifacts = await self._uow.artifacts.get_all(offset=offset, limit=page_size)
             total = await self._uow.artifacts.count()
 
-        return [self._to_response(a) for a in artifacts], PaginatedMeta(
+        return [self._to_response(a, language) for a in artifacts], PaginatedMeta(
             page=page,
             page_size=page_size,
             total=total,
             total_pages=max(1, (total + page_size - 1) // page_size),
         )
 
-    async def get_artifact(self, artifact_id: uuid.UUID) -> ArtifactResponse:
+    async def get_artifact(
+        self, artifact_id: uuid.UUID, *, language: Language = Language.KAZAKH
+    ) -> ArtifactResponse:
         artifact = await self._uow.artifacts.get_by_id(artifact_id)
         if artifact is None:
             raise NotFoundException("Artifact not found")
-        return self._to_response(artifact)
+        return self._to_response(artifact, language)
 
     @staticmethod
-    def _to_response(artifact: Artifact) -> ArtifactResponse:
+    def _to_response(artifact: Artifact, language: Language) -> ArtifactResponse:
         return ArtifactResponse(
             id=artifact.id,
             city_id=artifact.city_id,
-            name=artifact.name,
-            description=artifact.description,
-            era=artifact.era,
+            name=resolve_localized(artifact, "name", language),
+            description=resolve_localized(artifact, "description", language),
+            era=resolve_localized(artifact, "era", language),
             rarity=artifact.rarity,
             image_url=artifact.image_url,
-            historical_context=artifact.historical_context,
+            historical_context=resolve_localized(artifact, "historical_context", language),
             created_at=artifact.created_at,
         )

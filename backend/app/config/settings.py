@@ -1,7 +1,7 @@
 """Application configuration via pydantic-settings."""
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Annotated
 
 from pydantic import Field, RedisDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,15 +24,13 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
 
     # Database
-    database_url: str = Field(
-        default="postgresql+asyncpg://postgres:03h6913A@localhost:5432/orda"
-    )
+    database_url: Annotated[str, Field(alias="DATABASE_URL")]
     db_pool_size: int = 20
     db_max_overflow: int = 10
     db_echo: bool = False
 
     # Redis
-    redis_url: RedisDsn = Field(default="redis://localhost:6379/0")
+    redis_url: Annotated[RedisDsn, Field(alias="REDIS_URL")]
     redis_chat_ttl_seconds: int = 3600
     redis_cities_cache_ttl_seconds: int = 300
     redis_session_ttl_seconds: int = 86400

@@ -29,6 +29,7 @@ from app.schemas.progress import (
     UserProgressSummary,
 )
 from app.services.notification import notify
+from app.utils.i18n import resolve_localized
 
 
 class ProgressService:
@@ -110,10 +111,10 @@ class ProgressService:
             self._uow,
             user.id,
             NotificationType.ARTIFACT_DISCOVERED,
-            "Artifact discovered",
-            f'You discovered "{artifact.name}"!',
+            user.language,
             entity_type="artifact",
             entity_id=artifact.id,
+            name=resolve_localized(artifact, "name", user.language),
         )
 
     async def get_progress_stats(self, user: User) -> ProgressStatsResponse:
@@ -225,15 +226,16 @@ class ProgressService:
             self._uow,
             user.id,
             NotificationType.DAILY_REWARD,
-            "Daily reward collected",
-            f"+{bonus_xp} XP and +{bonus_coins} coins for a {streak_days}-day streak!",
+            user.language,
+            bonus_xp=bonus_xp,
+            bonus_coins=bonus_coins,
+            streak_days=streak_days,
         )
         await notify(
             self._uow,
             user.id,
             NotificationType.DAILY_QUEST_REFRESHED,
-            "Quests refreshed",
-            "Today's quests are ready — check the map for what's new.",
+            user.language,
         )
         await self._award_achievements(user)
         await self._uow.session.commit()
@@ -378,12 +380,15 @@ class ProgressService:
             if metrics.get(definition.metric, 0) < definition.threshold:
                 continue
 
+            # Snapshotted in the recipient's language at award time — same convention
+            # as before, just language-aware instead of always-English.
+            localized_title = resolve_localized(definition, "title", user.language)
             achievement = Achievement(
                 user_id=user.id,
                 achievement_type=definition.key,
                 definition_id=definition.id,
-                title=definition.title,
-                description=definition.description,
+                title=localized_title,
+                description=resolve_localized(definition, "description", user.language),
                 icon_url=definition.icon_url,
                 reward_xp=definition.reward_xp,
                 reward_coins=definition.reward_coins,
@@ -396,10 +401,12 @@ class ProgressService:
                 self._uow,
                 user.id,
                 NotificationType.ACHIEVEMENT_UNLOCKED,
-                "Achievement unlocked",
-                f'You unlocked "{definition.title}" (+{definition.reward_xp} XP, +{definition.reward_coins} coins)!',
+                user.language,
                 entity_type="achievement_definition",
                 entity_id=definition.id,
+                title=localized_title,
+                reward_xp=definition.reward_xp,
+                reward_coins=definition.reward_coins,
             )
             existing_definition_ids.add(definition.id)
 

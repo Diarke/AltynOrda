@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.unit_of_work import UnitOfWork
 from app.dependencies.services import get_uow
+from app.enums import Language
 from app.schemas.artifact import ArtifactResponse
 from app.schemas.common import PaginatedResponse, SuccessResponse
 from app.services.artifact import ArtifactService
@@ -28,8 +29,11 @@ async def list_artifacts(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     city_id: uuid.UUID | None = Query(default=None),
+    language: Language = Language.KAZAKH,
 ) -> PaginatedResponse[ArtifactResponse]:
-    artifacts, meta = await service.list_artifacts(page=page, page_size=page_size, city_id=city_id)
+    artifacts, meta = await service.list_artifacts(
+        page=page, page_size=page_size, city_id=city_id, language=language
+    )
     return PaginatedResponse(data=artifacts, meta=meta)
 
 
@@ -41,6 +45,7 @@ async def list_artifacts(
 async def get_artifact(
     artifact_id: uuid.UUID,
     service: Annotated[ArtifactService, Depends(_artifact_service)],
+    language: Language = Language.KAZAKH,
 ) -> SuccessResponse[ArtifactResponse]:
-    artifact = await service.get_artifact(artifact_id)
+    artifact = await service.get_artifact(artifact_id, language=language)
     return SuccessResponse(data=artifact)

@@ -8,7 +8,6 @@ from pydantic import Field
 from app.enums import AchievementMetric, DocumentSourceType, Language, UserRole
 from app.schemas.auth import UserResponse
 from app.schemas.common import BaseSchema
-from app.schemas.quest import QuestResponse
 
 
 class AdminStatisticsResponse(BaseSchema):
@@ -45,76 +44,203 @@ class AdminUserUpdateRequest(BaseSchema):
 # ─── Cities ─────────────────────────────────────────────────────────────────
 
 
+class AdminCityResponse(BaseSchema):
+    id: uuid.UUID
+    slug: str
+    latitude: float
+    longitude: float
+    image_url: str | None
+    name_kk: str | None
+    name_ru: str | None
+    name_en: str | None
+    description_kk: str | None
+    description_ru: str | None
+    description_en: str | None
+    historical_period_kk: str | None
+    historical_period_ru: str | None
+    historical_period_en: str | None
+    population_estimate_kk: str | None
+    population_estimate_ru: str | None
+    population_estimate_en: str | None
+    significance_kk: str | None
+    significance_ru: str | None
+    significance_en: str | None
+    historical_facts_kk: list[str] | None
+    historical_facts_ru: list[str] | None
+    historical_facts_en: list[str] | None
+    trade_info_kk: str | None
+    trade_info_ru: str | None
+    trade_info_en: str | None
+    created_at: datetime
+
+
 class AdminCityCreateRequest(BaseSchema):
-    name: str = Field(min_length=1, max_length=255)
     slug: str = Field(min_length=1, max_length=255)
-    description: str
-    historical_period: str = Field(max_length=100)
     latitude: float
     longitude: float
     image_url: str | None = None
-    population_estimate: str | None = None
-    significance: str | None = None
-    historical_facts: list[str] | None = None
-    trade_info: str | None = None
+    name_kk: str = Field(min_length=1, max_length=255)
+    name_ru: str | None = None
+    name_en: str | None = None
+    description_kk: str
+    description_ru: str | None = None
+    description_en: str | None = None
+    historical_period_kk: str = Field(max_length=100)
+    historical_period_ru: str | None = Field(default=None, max_length=100)
+    historical_period_en: str | None = Field(default=None, max_length=100)
+    population_estimate_kk: str | None = None
+    population_estimate_ru: str | None = None
+    population_estimate_en: str | None = None
+    significance_kk: str | None = None
+    significance_ru: str | None = None
+    significance_en: str | None = None
+    historical_facts_kk: list[str] | None = None
+    historical_facts_ru: list[str] | None = None
+    historical_facts_en: list[str] | None = None
+    trade_info_kk: str | None = None
+    trade_info_ru: str | None = None
+    trade_info_en: str | None = None
 
 
 class AdminCityUpdateRequest(BaseSchema):
-    name: str | None = Field(default=None, min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = None
-    historical_period: str | None = Field(default=None, max_length=100)
     latitude: float | None = None
     longitude: float | None = None
     image_url: str | None = None
-    population_estimate: str | None = None
-    significance: str | None = None
-    historical_facts: list[str] | None = None
-    trade_info: str | None = None
+    name_kk: str | None = Field(default=None, min_length=1, max_length=255)
+    name_ru: str | None = None
+    name_en: str | None = None
+    description_kk: str | None = None
+    description_ru: str | None = None
+    description_en: str | None = None
+    historical_period_kk: str | None = Field(default=None, max_length=100)
+    historical_period_ru: str | None = Field(default=None, max_length=100)
+    historical_period_en: str | None = Field(default=None, max_length=100)
+    population_estimate_kk: str | None = None
+    population_estimate_ru: str | None = None
+    population_estimate_en: str | None = None
+    significance_kk: str | None = None
+    significance_ru: str | None = None
+    significance_en: str | None = None
+    historical_facts_kk: list[str] | None = None
+    historical_facts_ru: list[str] | None = None
+    historical_facts_en: list[str] | None = None
+    trade_info_kk: str | None = None
+    trade_info_ru: str | None = None
+    trade_info_en: str | None = None
 
 
 # ─── Artifacts ──────────────────────────────────────────────────────────────
 
 
+class AdminArtifactResponse(BaseSchema):
+    id: uuid.UUID
+    city_id: uuid.UUID
+    rarity: str
+    image_url: str | None
+    name_kk: str | None
+    name_ru: str | None
+    name_en: str | None
+    description_kk: str | None
+    description_ru: str | None
+    description_en: str | None
+    era_kk: str | None
+    era_ru: str | None
+    era_en: str | None
+    historical_context_kk: str | None
+    historical_context_ru: str | None
+    historical_context_en: str | None
+    created_at: datetime
+
+
 class AdminArtifactCreateRequest(BaseSchema):
     city_id: uuid.UUID
-    name: str = Field(min_length=1, max_length=255)
-    description: str
-    era: str = Field(max_length=100)
     rarity: str = Field(default="common", max_length=50)
     image_url: str | None = None
-    historical_context: str | None = None
+    name_kk: str = Field(min_length=1, max_length=255)
+    name_ru: str | None = None
+    name_en: str | None = None
+    description_kk: str
+    description_ru: str | None = None
+    description_en: str | None = None
+    era_kk: str = Field(max_length=100)
+    era_ru: str | None = Field(default=None, max_length=100)
+    era_en: str | None = Field(default=None, max_length=100)
+    historical_context_kk: str | None = None
+    historical_context_ru: str | None = None
+    historical_context_en: str | None = None
 
 
 class AdminArtifactUpdateRequest(BaseSchema):
     city_id: uuid.UUID | None = None
-    name: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = None
-    era: str | None = Field(default=None, max_length=100)
     rarity: str | None = Field(default=None, max_length=50)
     image_url: str | None = None
-    historical_context: str | None = None
+    name_kk: str | None = Field(default=None, min_length=1, max_length=255)
+    name_ru: str | None = None
+    name_en: str | None = None
+    description_kk: str | None = None
+    description_ru: str | None = None
+    description_en: str | None = None
+    era_kk: str | None = Field(default=None, max_length=100)
+    era_ru: str | None = Field(default=None, max_length=100)
+    era_en: str | None = Field(default=None, max_length=100)
+    historical_context_kk: str | None = None
+    historical_context_ru: str | None = None
+    historical_context_en: str | None = None
 
 
 # ─── Quests ─────────────────────────────────────────────────────────────────
 
 
 class AdminQuizQuestion(BaseSchema):
-    """A single structured quiz question, validated at write time.
+    """A single structured quiz question, validated at write time, with each
+    translatable part carried in all three languages so the quiz reads
+    correctly regardless of the player's language.
 
     Mirrors exactly what QuizService.submit_quiz expects to find when it later
     parses Quest.quiz_questions as JSON.
     """
 
-    question: str = Field(min_length=1, max_length=1000)
-    options: list[str] = Field(min_length=2, max_length=8)
-    correct_answer: str = Field(min_length=1, max_length=500)
+    question_kk: str = Field(min_length=1, max_length=1000)
+    question_ru: str | None = None
+    question_en: str | None = None
+    options_kk: list[str] = Field(min_length=2, max_length=8)
+    options_ru: list[str] | None = None
+    options_en: list[str] | None = None
+    correct_answer_kk: str = Field(min_length=1, max_length=500)
+    correct_answer_ru: str | None = None
+    correct_answer_en: str | None = None
+
+
+class AdminQuestResponse(BaseSchema):
+    id: uuid.UUID
+    city_id: uuid.UUID
+    difficulty: str
+    points: int
+    xp_reward: int
+    coin_reward: int
+    cooldown_hours: int
+    estimated_time_minutes: int
+    category: str
+    status: str
+    title_kk: str | None
+    title_ru: str | None
+    title_en: str | None
+    description_kk: str | None
+    description_ru: str | None
+    description_en: str | None
+    quiz_questions: list[AdminQuizQuestion] | None = None
+    created_at: datetime
 
 
 class AdminQuestCreateRequest(BaseSchema):
     city_id: uuid.UUID
-    title: str = Field(min_length=1, max_length=255)
-    description: str
+    title_kk: str = Field(min_length=1, max_length=255)
+    title_ru: str | None = None
+    title_en: str | None = None
+    description_kk: str
+    description_ru: str | None = None
+    description_en: str | None = None
     difficulty: str = Field(default="medium", max_length=50)
     points: int = Field(default=100, ge=0)
     xp_reward: int = Field(default=100, ge=0)
@@ -128,8 +254,12 @@ class AdminQuestCreateRequest(BaseSchema):
 
 class AdminQuestUpdateRequest(BaseSchema):
     city_id: uuid.UUID | None = None
-    title: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = None
+    title_kk: str | None = Field(default=None, min_length=1, max_length=255)
+    title_ru: str | None = None
+    title_en: str | None = None
+    description_kk: str | None = None
+    description_ru: str | None = None
+    description_en: str | None = None
     difficulty: str | None = Field(default=None, max_length=50)
     points: int | None = Field(default=None, ge=0)
     xp_reward: int | None = Field(default=None, ge=0)
@@ -138,10 +268,6 @@ class AdminQuestUpdateRequest(BaseSchema):
     estimated_time_minutes: int | None = Field(default=None, ge=0)
     category: str | None = Field(default=None, max_length=50)
     status: str | None = None
-    quiz_questions: list[AdminQuizQuestion] | None = None
-
-
-class AdminQuestResponse(QuestResponse):
     quiz_questions: list[AdminQuizQuestion] | None = None
 
 
@@ -356,8 +482,12 @@ class AdminAchievementUpdateRequest(BaseSchema):
 class AdminAchievementDefinitionResponse(BaseSchema):
     id: uuid.UUID
     key: str
-    title: str
-    description: str
+    title_kk: str | None
+    title_ru: str | None
+    title_en: str | None
+    description_kk: str | None
+    description_ru: str | None
+    description_en: str | None
     icon_url: str | None
     metric: AchievementMetric
     threshold: int
@@ -370,8 +500,12 @@ class AdminAchievementDefinitionResponse(BaseSchema):
 
 class AdminAchievementDefinitionCreateRequest(BaseSchema):
     key: str = Field(min_length=1, max_length=100)
-    title: str = Field(min_length=1, max_length=255)
-    description: str
+    title_kk: str = Field(min_length=1, max_length=255)
+    title_ru: str | None = None
+    title_en: str | None = None
+    description_kk: str
+    description_ru: str | None = None
+    description_en: str | None = None
     icon_url: str | None = None
     metric: AchievementMetric
     threshold: int = Field(ge=0)
@@ -383,8 +517,12 @@ class AdminAchievementDefinitionCreateRequest(BaseSchema):
 
 class AdminAchievementDefinitionUpdateRequest(BaseSchema):
     key: str | None = Field(default=None, min_length=1, max_length=100)
-    title: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = None
+    title_kk: str | None = Field(default=None, min_length=1, max_length=255)
+    title_ru: str | None = None
+    title_en: str | None = None
+    description_kk: str | None = None
+    description_ru: str | None = None
+    description_en: str | None = None
     icon_url: str | None = None
     metric: AchievementMetric | None = None
     threshold: int | None = Field(default=None, ge=0)

@@ -3,13 +3,14 @@
 import uuid
 
 from app.core.unit_of_work import UnitOfWork
-from app.enums import ProgressType, QuestStatus
+from app.enums import Language, ProgressType, QuestStatus
 from app.exceptions import NotFoundException
 from app.models.progress import Progress
 from app.models.quest import Quest
 from app.models.user import User
 from app.schemas.common import PaginatedMeta
 from app.schemas.quest import QuestResponse
+from app.utils.i18n import resolve_localized
 
 
 class QuestService:
@@ -25,6 +26,7 @@ class QuestService:
         page_size: int = 20,
         city_id: uuid.UUID | None = None,
         current_user: User | None = None,
+        language: Language = Language.KAZAKH,
     ) -> tuple[list[QuestResponse], PaginatedMeta]:
         offset = (page - 1) * page_size
         if city_id is not None:
@@ -39,7 +41,7 @@ class QuestService:
 
         progress_by_quest = await self._get_progress_lookup(current_user)
         return [
-            self._to_response(q, progress_by_quest.get(q.id)) for q in quests
+            self._to_response(q, progress_by_quest.get(q.id), language) for q in quests
         ], PaginatedMeta(
             page=page,
             page_size=page_size,
@@ -48,13 +50,17 @@ class QuestService:
         )
 
     async def get_quest(
-        self, quest_id: uuid.UUID, *, current_user: User | None = None
+        self,
+        quest_id: uuid.UUID,
+        *,
+        current_user: User | None = None,
+        language: Language = Language.KAZAKH,
     ) -> QuestResponse:
         quest = await self._uow.quests.get_by_id(quest_id)
         if quest is None:
             raise NotFoundException("Quest not found")
         progress_by_quest = await self._get_progress_lookup(current_user)
-        return self._to_response(quest, progress_by_quest.get(quest_id))
+        return self._to_response(quest, progress_by_quest.get(quest_id), language)
 
     async def _get_progress_lookup(
         self, current_user: User | None
@@ -67,14 +73,16 @@ class QuestService:
         return {record.entity_id: record for record in records}
 
     @staticmethod
-    def _to_response(quest: Quest, progress: Progress | None = None) -> QuestResponse:
+    def _to_response(
+        quest: Quest, progress: Progress | None, language: Language
+    ) -> QuestResponse:
         completion_status = progress.status if progress is not None else QuestStatus.NOT_STARTED
         cooldown_until = progress.cooldown_until if progress is not None else None
         return QuestResponse(
             id=quest.id,
             city_id=quest.city_id,
-            title=quest.title,
-            description=quest.description,
+            title=resolve_localized(quest, "title", language),
+            description=resolve_localized(quest, "description", language),
             difficulty=quest.difficulty,
             points=quest.points,
             xp_reward=quest.xp_reward,

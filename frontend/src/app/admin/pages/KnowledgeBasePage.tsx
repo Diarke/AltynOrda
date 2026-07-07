@@ -13,6 +13,7 @@ import { DataTable, type DataTableColumn } from "../components/DataTable";
 import { FormDialog } from "../components/FormDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LanguageTabs } from "../components/LanguageTabs";
+import { displayField } from "../lib/localizedDisplay";
 import {
   useAdminHistoricalDocuments,
   useUploadAdminHistoricalDocument,
@@ -137,7 +138,7 @@ function UploadTab() {
               <SelectContent>
                 <SelectItem value="none">No specific city</SelectItem>
                 {cities.map((city) => (
-                  <SelectItem key={city.id} value={city.id}>{city.name}</SelectItem>
+                  <SelectItem key={city.id} value={city.id}>{displayField(city, "name")}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

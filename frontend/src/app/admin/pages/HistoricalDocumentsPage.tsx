@@ -12,6 +12,7 @@ import { DataTable, type DataTableColumn } from "../components/DataTable";
 import { FormDialog } from "../components/FormDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LanguageTabs } from "../components/LanguageTabs";
+import { displayField } from "../lib/localizedDisplay";
 import {
   useAdminHistoricalDocuments,
   useCreateAdminHistoricalDocument,
@@ -58,7 +59,10 @@ export function HistoricalDocumentsPage() {
   const deleteMutation = useDeleteAdminHistoricalDocument();
 
   const cities = citiesData?.data ?? [];
-  const cityName = (id: string | null) => (id ? cities.find((c) => c.id === id)?.name ?? id : "—");
+  const cityName = (id: string | null) => {
+    const city = id ? cities.find((c) => c.id === id) : undefined;
+    return city ? displayField(city, "name") : (id ?? "—");
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -152,7 +156,7 @@ export function HistoricalDocumentsPage() {
           <SelectContent>
             <SelectItem value="all">All cities</SelectItem>
             {cities.map((city) => (
-              <SelectItem key={city.id} value={city.id}>{city.name}</SelectItem>
+              <SelectItem key={city.id} value={city.id}>{displayField(city, "name")}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -235,7 +239,7 @@ export function HistoricalDocumentsPage() {
                 <SelectItem value="none">No specific city</SelectItem>
                 {cities.map((city) => (
                   <SelectItem key={city.id} value={city.id}>
-                    {city.name}
+                    {displayField(city, "name")}
                   </SelectItem>
                 ))}
               </SelectContent>

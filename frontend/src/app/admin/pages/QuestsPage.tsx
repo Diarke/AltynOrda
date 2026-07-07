@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../componen
 import { DataTable, type DataTableColumn } from "../components/DataTable";
 import { FormDialog } from "../components/FormDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { LanguageTabs } from "../components/LanguageTabs";
 import {
   useAdminQuests,
   useCreateAdminQuest,
@@ -21,13 +22,20 @@ import {
   type AdminQuestInput,
   type AdminQuizQuestion,
 } from "../lib/adminApi";
+import { displayField } from "../lib/localizedDisplay";
+
+type Lang = "kk" | "ru" | "en";
 
 const DIFFICULTIES = ["easy", "medium", "hard"];
 
 const EMPTY_FORM: AdminQuestInput = {
   city_id: "",
-  title: "",
-  description: "",
+  title_kk: "",
+  title_ru: null,
+  title_en: null,
+  description_kk: "",
+  description_ru: null,
+  description_en: null,
   difficulty: "medium",
   points: 100,
   xp_reward: 100,
@@ -40,7 +48,17 @@ const EMPTY_FORM: AdminQuestInput = {
 };
 
 function emptyQuestion(): AdminQuizQuestion {
-  return { question: "", options: ["", ""], correct_answer: "" };
+  return {
+    question_kk: "",
+    question_ru: null,
+    question_en: null,
+    options_kk: ["", ""],
+    options_ru: null,
+    options_en: null,
+    correct_answer_kk: "",
+    correct_answer_ru: null,
+    correct_answer_en: null,
+  };
 }
 
 export function QuestsPage() {
@@ -51,6 +69,7 @@ export function QuestsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AdminQuest | null>(null);
   const [form, setForm] = useState<AdminQuestInput>(EMPTY_FORM);
+  const [lang, setLang] = useState<Lang>("kk");
   const [deleteTarget, setDeleteTarget] = useState<AdminQuest | null>(null);
   const [previewTarget, setPreviewTarget] = useState<AdminQuest | null>(null);
 
@@ -65,12 +84,16 @@ export function QuestsPage() {
   const deleteMutation = useDeleteAdminQuest();
 
   const cities = citiesData?.data ?? [];
-  const cityName = (id: string) => cities.find((c) => c.id === id)?.name ?? id;
+  const cityName = (id: string) => {
+    const city = cities.find((c) => c.id === id);
+    return city ? displayField(city, "name") : id;
+  };
   const questions = form.quiz_questions ?? [];
 
   const openCreate = () => {
     setEditing(null);
     setForm({ ...EMPTY_FORM, city_id: cities[0]?.id ?? "" });
+    setLang("kk");
     setDialogOpen(true);
   };
 
@@ -78,8 +101,12 @@ export function QuestsPage() {
     setEditing(quest);
     setForm({
       city_id: quest.city_id,
-      title: quest.title,
-      description: quest.description,
+      title_kk: quest.title_kk,
+      title_ru: quest.title_ru,
+      title_en: quest.title_en,
+      description_kk: quest.description_kk,
+      description_ru: quest.description_ru,
+      description_en: quest.description_en,
       difficulty: quest.difficulty,
       points: quest.points,
       xp_reward: quest.xp_reward,
@@ -90,6 +117,7 @@ export function QuestsPage() {
       status: quest.status,
       quiz_questions: quest.quiz_questions,
     });
+    setLang("kk");
     setDialogOpen(true);
   };
 
@@ -125,8 +153,19 @@ export function QuestsPage() {
     setForm({ ...form, quiz_questions: next });
   };
 
+  const setOption = (qIndex: number, optIndex: number, value: string) => {
+    const opts = [...(questions[qIndex][`options_${lang}`] ?? [])];
+    opts[optIndex] = value;
+    updateQuestion(qIndex, { [`options_${lang}`]: opts } as Partial<AdminQuizQuestion>);
+  };
+
+  const addOption = (qIndex: number) => {
+    const opts = [...(questions[qIndex][`options_${lang}`] ?? []), ""];
+    updateQuestion(qIndex, { [`options_${lang}`]: opts } as Partial<AdminQuizQuestion>);
+  };
+
   const columns: DataTableColumn<AdminQuest>[] = [
-    { key: "title", header: "Title", render: (q) => <span className="font-medium">{q.title}</span> },
+    { key: "title", header: "Title", render: (q) => <span className="font-medium">{displayField(q, "title")}</span> },
     { key: "city", header: "City", render: (q) => cityName(q.city_id) },
     { key: "difficulty", header: "Difficulty", render: (q) => <Badge variant="outline">{q.difficulty}</Badge> },
     { key: "xp", header: "XP / Coins", render: (q) => `${q.xp_reward} / ${q.coin_reward}` },
@@ -161,7 +200,7 @@ export function QuestsPage() {
           <SelectContent>
             <SelectItem value="all">All cities</SelectItem>
             {cities.map((city) => (
-              <SelectItem key={city.id} value={city.id}>{city.name}</SelectItem>
+              <SelectItem key={city.id} value={city.id}>{displayField(city, "name")}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -219,19 +258,11 @@ export function QuestsPage() {
             <SelectContent>
               {cities.map((city) => (
                 <SelectItem key={city.id} value={city.id}>
-                  {city.name}
+                  {displayField(city, "name")}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label>Title</Label>
-          <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Description</Label>
-          <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required />
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1.5">
@@ -297,9 +328,36 @@ export function QuestsPage() {
           </div>
         </div>
 
+        <div className="pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }} />
+
+        <div className="space-y-1.5">
+          <Label>Language</Label>
+          <LanguageTabs value={lang} onChange={(value) => setLang(value as Lang)} />
+          <p className="text-xs text-muted-foreground">
+            Switching tabs edits that language only — the other two are untouched until you fill them in.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Title</Label>
+          <Input
+            value={form[`title_${lang}`] ?? ""}
+            onChange={(e) => setForm({ ...form, [`title_${lang}`]: e.target.value })}
+            required={lang === "kk"}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Description</Label>
+          <Textarea
+            value={form[`description_${lang}`] ?? ""}
+            onChange={(e) => setForm({ ...form, [`description_${lang}`]: e.target.value })}
+            required={lang === "kk"}
+          />
+        </div>
+
         <div className="space-y-2 pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
           <div className="flex items-center justify-between">
-            <Label>Quiz questions (optional)</Label>
+            <Label>Quiz questions (optional) — {lang}</Label>
             <Button
               type="button"
               variant="outline"
@@ -314,8 +372,8 @@ export function QuestsPage() {
               <div className="flex items-center gap-2">
                 <Input
                   placeholder={`Question ${index + 1}`}
-                  value={question.question}
-                  onChange={(e) => updateQuestion(index, { question: e.target.value })}
+                  value={question[`question_${lang}`] ?? ""}
+                  onChange={(e) => updateQuestion(index, { [`question_${lang}`]: e.target.value } as Partial<AdminQuizQuestion>)}
                 />
                 <Button
                   type="button"
@@ -327,30 +385,22 @@ export function QuestsPage() {
                 </Button>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                {question.options.map((option, optIndex) => (
+                {(question[`options_${lang}`] ?? []).map((option, optIndex) => (
                   <Input
                     key={optIndex}
                     placeholder={`Option ${optIndex + 1}`}
                     value={option}
-                    onChange={(e) => {
-                      const nextOptions = question.options.map((o, i) => (i === optIndex ? e.target.value : o));
-                      updateQuestion(index, { options: nextOptions });
-                    }}
+                    onChange={(e) => setOption(index, optIndex, e.target.value)}
                   />
                 ))}
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => updateQuestion(index, { options: [...question.options, ""] })}
-              >
+              <Button type="button" variant="outline" size="sm" onClick={() => addOption(index)}>
                 <Plus size={12} /> Add option
               </Button>
               <Input
                 placeholder="Correct answer (must match one option exactly)"
-                value={question.correct_answer}
-                onChange={(e) => updateQuestion(index, { correct_answer: e.target.value })}
+                value={question[`correct_answer_${lang}`] ?? ""}
+                onChange={(e) => updateQuestion(index, { [`correct_answer_${lang}`]: e.target.value } as Partial<AdminQuizQuestion>)}
               />
             </div>
           ))}
@@ -365,11 +415,11 @@ export function QuestsPage() {
           {previewTarget && (
             <div className="rounded-2xl p-6 border" style={{ background: "rgba(23,26,32,0.8)", borderColor: "rgba(212,175,55,0.12)" }}>
               <Badge className="mb-3">{previewTarget.category}</Badge>
-              <h3 className="orda-cinzel text-xl font-bold mb-1" style={{ color: "#F6F4EC" }}>{previewTarget.title}</h3>
+              <h3 className="orda-cinzel text-xl font-bold mb-1" style={{ color: "#F6F4EC" }}>{displayField(previewTarget, "title")}</h3>
               <div className="flex items-center gap-2 mb-4 text-xs" style={{ color: "#B7BAC3" }}>
                 <MapPin size={12} color="#D4AF37" /> {cityName(previewTarget.city_id)}
               </div>
-              <p className="text-sm italic mb-4" style={{ color: "#F6F4EC" }}>{previewTarget.description}</p>
+              <p className="text-sm italic mb-4" style={{ color: "#F6F4EC" }}>{displayField(previewTarget, "description")}</p>
               <div className="flex items-center gap-4 text-xs" style={{ color: "#B7BAC3" }}>
                 <span className="flex items-center gap-1"><Zap size={12} color="#D4AF37" /> +{previewTarget.xp_reward} XP</span>
                 <span>+{previewTarget.coin_reward} coins</span>
@@ -389,7 +439,7 @@ export function QuestsPage() {
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="Delete quest"
-        description={`Are you sure you want to delete "${deleteTarget?.title}"? This cannot be undone.`}
+        description={`Are you sure you want to delete "${deleteTarget ? displayField(deleteTarget, "title") : ""}"? This cannot be undone.`}
         onConfirm={handleDelete}
       />
     </div>

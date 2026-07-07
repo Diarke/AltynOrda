@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from app.auth.dependencies import OptionalUser
 from app.core.unit_of_work import UnitOfWork
 from app.dependencies.services import get_uow
+from app.enums import Language
 from app.schemas.common import PaginatedResponse, SuccessResponse
 from app.schemas.quest import QuestResponse
 from app.services.quest import QuestService
@@ -30,9 +31,10 @@ async def list_quests(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     city_id: uuid.UUID | None = Query(default=None),
+    language: Language = Language.KAZAKH,
 ) -> PaginatedResponse[QuestResponse]:
     quests, meta = await service.list_quests(
-        page=page, page_size=page_size, city_id=city_id, current_user=current_user
+        page=page, page_size=page_size, city_id=city_id, current_user=current_user, language=language
     )
     return PaginatedResponse(data=quests, meta=meta)
 
@@ -46,6 +48,7 @@ async def get_quest(
     quest_id: uuid.UUID,
     service: Annotated[QuestService, Depends(_quest_service)],
     current_user: OptionalUser,
+    language: Language = Language.KAZAKH,
 ) -> SuccessResponse[QuestResponse]:
-    quest = await service.get_quest(quest_id, current_user=current_user)
+    quest = await service.get_quest(quest_id, current_user=current_user, language=language)
     return SuccessResponse(data=quest)

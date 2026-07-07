@@ -46,11 +46,13 @@ from app.schemas.admin import (
     AdminActivityItem,
     AdminAIUsageResponse,
     AdminArtifactCreateRequest,
+    AdminArtifactResponse,
     AdminArtifactUpdateRequest,
     AdminCertificateCreateRequest,
     AdminCertificatesAnalyticsResponse,
     AdminCertificateUpdateRequest,
     AdminCityCreateRequest,
+    AdminCityResponse,
     AdminCityUpdateRequest,
     AdminCoinEconomyResponse,
     AdminCoinHolder,
@@ -82,10 +84,8 @@ from app.schemas.admin import (
     AdminXPStatsResponse,
     TimeSeriesPoint,
 )
-from app.schemas.artifact import ArtifactResponse
 from app.schemas.auth import UserResponse
 from app.schemas.certificate import CertificateResponse
-from app.schemas.city import CityResponse
 from app.schemas.progress import AchievementResponse
 from app.schemas.suggested_prompt import (
     AdminSuggestedPromptCreateRequest,
@@ -93,8 +93,29 @@ from app.schemas.suggested_prompt import (
     SuggestedPromptResponse,
 )
 from app.services.notification import notify_all_active_users
+from app.utils.i18n import resolve_localized
 
 MAX_KNOWLEDGE_BASE_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+
+# Admin search matches any language variant of a localized field, since admins
+# may type a search term in any of the three languages.
+CITY_SEARCH_FIELDS = [
+    "name_kk", "name_ru", "name_en", "slug",
+    "historical_period_kk", "historical_period_ru", "historical_period_en",
+]
+ARTIFACT_SEARCH_FIELDS = [
+    "name_kk", "name_ru", "name_en",
+    "era_kk", "era_ru", "era_en",
+    "description_kk", "description_ru", "description_en",
+]
+QUEST_SEARCH_FIELDS = [
+    "title_kk", "title_ru", "title_en",
+    "description_kk", "description_ru", "description_en",
+]
+ACHIEVEMENT_DEFINITION_SEARCH_FIELDS = [
+    "title_kk", "title_ru", "title_en", "key",
+    "description_kk", "description_ru", "description_en",
+]
 
 
 class AdminService:
@@ -163,13 +184,14 @@ class AdminService:
         return int(result.scalar_one() or 0)
 
     async def _get_most_visited_city(self) -> str | None:
+        name_column = func.coalesce(City.name_kk, City.name_en, City.name_ru)
         stmt = (
-            select(City.name)
+            select(name_column)
             .join(
                 Progress,
                 (Progress.entity_id == City.id) & (Progress.entity_type == ProgressType.CITY),
             )
-            .group_by(City.id, City.name)
+            .group_by(City.id, name_column)
             .order_by(func.count(Progress.id).desc())
             .limit(1)
         )
@@ -177,17 +199,18 @@ class AdminService:
         city_name = result.scalar_one_or_none()
         if city_name is None:
             fallback = await self._uow.cities.get_all(offset=0, limit=1)
-            return fallback[0].name if fallback else None
+            return resolve_localized(fallback[0], "name", Language.KAZAKH) if fallback else None
         return city_name
 
     async def _get_most_popular_artifact(self) -> str | None:
+        name_column = func.coalesce(Artifact.name_kk, Artifact.name_en, Artifact.name_ru)
         stmt = (
-            select(Artifact.name)
+            select(name_column)
             .join(
                 Progress,
                 (Progress.entity_id == Artifact.id) & (Progress.entity_type == ProgressType.ARTIFACT),
             )
-            .group_by(Artifact.id, Artifact.name)
+            .group_by(Artifact.id, name_column)
             .order_by(func.count(Progress.id).desc())
             .limit(1)
         )
@@ -195,7 +218,7 @@ class AdminService:
         artifact_name = result.scalar_one_or_none()
         if artifact_name is None:
             fallback = await self._uow.artifacts.get_all(offset=0, limit=1)
-            return fallback[0].name if fallback else None
+            return resolve_localized(fallback[0], "name", Language.KAZAKH) if fallback else None
         return artifact_name
 
     async def _get_most_used_ai_prompt(self) -> str | None:
@@ -245,15 +268,16 @@ class AdminService:
         by_status_result = await self._uow.session.execute(by_status_stmt)
         by_status = {status.value: count for status, count in by_status_result.all()}
 
+        title_column = func.coalesce(Quest.title_kk, Quest.title_en, Quest.title_ru)
         top_quests_stmt = (
-            select(Quest.title, func.count(Progress.id).label("completions"))
+            select(title_column, func.count(Progress.id).label("completions"))
             .join(
                 Progress,
                 (Progress.entity_id == Quest.id)
                 & (Progress.entity_type == ProgressType.QUEST)
                 & (Progress.status == QuestStatus.COMPLETED),
             )
-            .group_by(Quest.id, Quest.title)
+            .group_by(Quest.id, title_column)
             .order_by(func.count(Progress.id).desc())
             .limit(10)
         )
@@ -452,41 +476,55 @@ class AdminService:
 
     async def list_cities(
         self, *, q: str | None = None, offset: int = 0, limit: int = 20
-    ) -> list[CityResponse]:
+    ) -> list[AdminCityResponse]:
         cities = await self._uow.cities.search(
-            search_query=q, search_fields=["name", "slug", "historical_period"], offset=offset, limit=limit
+            search_query=q, search_fields=CITY_SEARCH_FIELDS, offset=offset, limit=limit
         )
         return [self._to_city_response(city) for city in cities]
 
     async def count_cities(self, *, q: str | None = None) -> int:
         return await self._uow.cities.count_search(
-            search_query=q, search_fields=["name", "slug", "historical_period"]
+            search_query=q, search_fields=CITY_SEARCH_FIELDS
         )
 
-    async def get_city(self, city_id: uuid.UUID) -> CityResponse:
+    async def get_city(self, city_id: uuid.UUID) -> AdminCityResponse:
         city = await self._uow.cities.get_by_id(city_id)
         if city is None:
             raise NotFoundException("City not found")
         return self._to_city_response(city)
 
-    async def create_city(self, data: AdminCityCreateRequest) -> CityResponse:
+    async def create_city(self, data: AdminCityCreateRequest) -> AdminCityResponse:
         city = City(
-            name=data.name,
             slug=data.slug,
-            description=data.description,
-            historical_period=data.historical_period,
             latitude=data.latitude,
             longitude=data.longitude,
             image_url=data.image_url,
-            population_estimate=data.population_estimate,
-            significance=data.significance,
-            historical_facts=data.historical_facts,
-            trade_info=data.trade_info,
+            name_kk=data.name_kk,
+            name_ru=data.name_ru,
+            name_en=data.name_en,
+            description_kk=data.description_kk,
+            description_ru=data.description_ru,
+            description_en=data.description_en,
+            historical_period_kk=data.historical_period_kk,
+            historical_period_ru=data.historical_period_ru,
+            historical_period_en=data.historical_period_en,
+            population_estimate_kk=data.population_estimate_kk,
+            population_estimate_ru=data.population_estimate_ru,
+            population_estimate_en=data.population_estimate_en,
+            significance_kk=data.significance_kk,
+            significance_ru=data.significance_ru,
+            significance_en=data.significance_en,
+            historical_facts_kk=data.historical_facts_kk,
+            historical_facts_ru=data.historical_facts_ru,
+            historical_facts_en=data.historical_facts_en,
+            trade_info_kk=data.trade_info_kk,
+            trade_info_ru=data.trade_info_ru,
+            trade_info_en=data.trade_info_en,
         )
         created = await self._uow.cities.create(city)
         return self._to_city_response(created)
 
-    async def update_city(self, city_id: uuid.UUID, data: AdminCityUpdateRequest) -> CityResponse:
+    async def update_city(self, city_id: uuid.UUID, data: AdminCityUpdateRequest) -> AdminCityResponse:
         city = await self._uow.cities.get_by_id(city_id)
         if city is None:
             raise NotFoundException("City not found")
@@ -511,10 +549,10 @@ class AdminService:
         rarity: str | None = None,
         offset: int = 0,
         limit: int = 20,
-    ) -> list[ArtifactResponse]:
+    ) -> list[AdminArtifactResponse]:
         artifacts = await self._uow.artifacts.search(
             search_query=q,
-            search_fields=["name", "era", "description"],
+            search_fields=ARTIFACT_SEARCH_FIELDS,
             filters={"city_id": city_id, "rarity": rarity},
             offset=offset,
             limit=limit,
@@ -526,32 +564,40 @@ class AdminService:
     ) -> int:
         return await self._uow.artifacts.count_search(
             search_query=q,
-            search_fields=["name", "era", "description"],
+            search_fields=ARTIFACT_SEARCH_FIELDS,
             filters={"city_id": city_id, "rarity": rarity},
         )
 
-    async def get_artifact(self, artifact_id: uuid.UUID) -> ArtifactResponse:
+    async def get_artifact(self, artifact_id: uuid.UUID) -> AdminArtifactResponse:
         artifact = await self._uow.artifacts.get_by_id(artifact_id)
         if artifact is None:
             raise NotFoundException("Artifact not found")
         return self._to_artifact_response(artifact)
 
-    async def create_artifact(self, data: AdminArtifactCreateRequest) -> ArtifactResponse:
+    async def create_artifact(self, data: AdminArtifactCreateRequest) -> AdminArtifactResponse:
         artifact = Artifact(
             city_id=data.city_id,
-            name=data.name,
-            description=data.description,
-            era=data.era,
+            name_kk=data.name_kk,
+            name_ru=data.name_ru,
+            name_en=data.name_en,
+            description_kk=data.description_kk,
+            description_ru=data.description_ru,
+            description_en=data.description_en,
+            era_kk=data.era_kk,
+            era_ru=data.era_ru,
+            era_en=data.era_en,
             rarity=data.rarity,
             image_url=data.image_url,
-            historical_context=data.historical_context,
+            historical_context_kk=data.historical_context_kk,
+            historical_context_ru=data.historical_context_ru,
+            historical_context_en=data.historical_context_en,
         )
         created = await self._uow.artifacts.create(artifact)
         return self._to_artifact_response(created)
 
     async def update_artifact(
         self, artifact_id: uuid.UUID, data: AdminArtifactUpdateRequest
-    ) -> ArtifactResponse:
+    ) -> AdminArtifactResponse:
         artifact = await self._uow.artifacts.get_by_id(artifact_id)
         if artifact is None:
             raise NotFoundException("Artifact not found")
@@ -580,7 +626,7 @@ class AdminService:
     ) -> list[AdminQuestResponse]:
         quests = await self._uow.quests.search(
             search_query=q,
-            search_fields=["title", "description"],
+            search_fields=QUEST_SEARCH_FIELDS,
             filters={"city_id": city_id, "difficulty": difficulty, "category": category},
             offset=offset,
             limit=limit,
@@ -597,7 +643,7 @@ class AdminService:
     ) -> int:
         return await self._uow.quests.count_search(
             search_query=q,
-            search_fields=["title", "description"],
+            search_fields=QUEST_SEARCH_FIELDS,
             filters={"city_id": city_id, "difficulty": difficulty, "category": category},
         )
 
@@ -610,8 +656,12 @@ class AdminService:
     async def create_quest(self, data: AdminQuestCreateRequest) -> AdminQuestResponse:
         quest = Quest(
             city_id=data.city_id,
-            title=data.title,
-            description=data.description,
+            title_kk=data.title_kk,
+            title_ru=data.title_ru,
+            title_en=data.title_en,
+            description_kk=data.description_kk,
+            description_ru=data.description_ru,
+            description_en=data.description_en,
             difficulty=data.difficulty,
             points=data.points,
             xp_reward=data.xp_reward,
@@ -626,8 +676,7 @@ class AdminService:
         await notify_all_active_users(
             self._uow,
             NotificationType.QUEST_AVAILABLE,
-            "New quest available",
-            f'A new quest "{created.title}" is now available!',
+            lambda user: {"title": resolve_localized(created, "title", user.language)},
             entity_type="quest",
             entity_id=created.id,
         )
@@ -1141,7 +1190,7 @@ class AdminService:
     ) -> list[AdminAchievementDefinitionResponse]:
         definitions = await self._uow.achievement_definitions.search(
             search_query=q,
-            search_fields=["title", "key", "description"],
+            search_fields=ACHIEVEMENT_DEFINITION_SEARCH_FIELDS,
             filters={"metric": metric, "is_active": is_active},
             offset=offset,
             limit=limit,
@@ -1153,7 +1202,7 @@ class AdminService:
     ) -> int:
         return await self._uow.achievement_definitions.count_search(
             search_query=q,
-            search_fields=["title", "key", "description"],
+            search_fields=ACHIEVEMENT_DEFINITION_SEARCH_FIELDS,
             filters={"metric": metric, "is_active": is_active},
         )
 
@@ -1170,8 +1219,12 @@ class AdminService:
     ) -> AdminAchievementDefinitionResponse:
         definition = AchievementDefinition(
             key=data.key,
-            title=data.title,
-            description=data.description,
+            title_kk=data.title_kk,
+            title_ru=data.title_ru,
+            title_en=data.title_en,
+            description_kk=data.description_kk,
+            description_ru=data.description_ru,
+            description_en=data.description_en,
             icon_url=data.icon_url,
             metric=data.metric,
             threshold=data.threshold,
@@ -1378,34 +1431,56 @@ class AdminService:
         )
 
     @staticmethod
-    def _to_city_response(city: City) -> CityResponse:
-        return CityResponse(
+    def _to_city_response(city: City) -> AdminCityResponse:
+        return AdminCityResponse(
             id=city.id,
-            name=city.name,
             slug=city.slug,
-            description=city.description,
-            historical_period=city.historical_period,
             latitude=city.latitude,
             longitude=city.longitude,
             image_url=city.image_url,
-            population_estimate=city.population_estimate,
-            significance=city.significance,
-            historical_facts=city.historical_facts,
-            trade_info=city.trade_info,
+            name_kk=city.name_kk,
+            name_ru=city.name_ru,
+            name_en=city.name_en,
+            description_kk=city.description_kk,
+            description_ru=city.description_ru,
+            description_en=city.description_en,
+            historical_period_kk=city.historical_period_kk,
+            historical_period_ru=city.historical_period_ru,
+            historical_period_en=city.historical_period_en,
+            population_estimate_kk=city.population_estimate_kk,
+            population_estimate_ru=city.population_estimate_ru,
+            population_estimate_en=city.population_estimate_en,
+            significance_kk=city.significance_kk,
+            significance_ru=city.significance_ru,
+            significance_en=city.significance_en,
+            historical_facts_kk=city.historical_facts_kk,
+            historical_facts_ru=city.historical_facts_ru,
+            historical_facts_en=city.historical_facts_en,
+            trade_info_kk=city.trade_info_kk,
+            trade_info_ru=city.trade_info_ru,
+            trade_info_en=city.trade_info_en,
             created_at=city.created_at,
         )
 
     @staticmethod
-    def _to_artifact_response(artifact: Artifact) -> ArtifactResponse:
-        return ArtifactResponse(
+    def _to_artifact_response(artifact: Artifact) -> AdminArtifactResponse:
+        return AdminArtifactResponse(
             id=artifact.id,
             city_id=artifact.city_id,
-            name=artifact.name,
-            description=artifact.description,
-            era=artifact.era,
             rarity=artifact.rarity,
             image_url=artifact.image_url,
-            historical_context=artifact.historical_context,
+            name_kk=artifact.name_kk,
+            name_ru=artifact.name_ru,
+            name_en=artifact.name_en,
+            description_kk=artifact.description_kk,
+            description_ru=artifact.description_ru,
+            description_en=artifact.description_en,
+            era_kk=artifact.era_kk,
+            era_ru=artifact.era_ru,
+            era_en=artifact.era_en,
+            historical_context_kk=artifact.historical_context_kk,
+            historical_context_ru=artifact.historical_context_ru,
+            historical_context_en=artifact.historical_context_en,
             created_at=artifact.created_at,
         )
 
@@ -1414,8 +1489,12 @@ class AdminService:
         return AdminQuestResponse(
             id=quest.id,
             city_id=quest.city_id,
-            title=quest.title,
-            description=quest.description,
+            title_kk=quest.title_kk,
+            title_ru=quest.title_ru,
+            title_en=quest.title_en,
+            description_kk=quest.description_kk,
+            description_ru=quest.description_ru,
+            description_en=quest.description_en,
             difficulty=quest.difficulty,
             points=quest.points,
             xp_reward=quest.xp_reward,
@@ -1424,7 +1503,6 @@ class AdminService:
             estimated_time_minutes=quest.estimated_time_minutes,
             category=quest.category,
             status=quest.status,
-            completion_status=quest.status,
             created_at=quest.created_at,
             quiz_questions=cls._quiz_questions_from_json(quest.quiz_questions),
         )
@@ -1537,8 +1615,12 @@ class AdminService:
         return AdminAchievementDefinitionResponse(
             id=definition.id,
             key=definition.key,
-            title=definition.title,
-            description=definition.description,
+            title_kk=definition.title_kk,
+            title_ru=definition.title_ru,
+            title_en=definition.title_en,
+            description_kk=definition.description_kk,
+            description_ru=definition.description_ru,
+            description_en=definition.description_en,
             icon_url=definition.icon_url,
             metric=definition.metric,
             threshold=definition.threshold,

@@ -220,6 +220,14 @@
       "sygnak": "Throne of the White Horde",
       "bolgar": "Northern Jewel of the Horde",
       "crimea": "Pearl of the Black Sea"
+    },
+    "firstVisitHint": "Choose a city to begin your journey.",
+    "dismissHint": "Dismiss",
+    "layers": {
+      "cities": "Cities",
+      "rivers": "Rivers",
+      "tradeRoutes": "Trade Routes",
+      "borders": "Historical Borders"
     }
   },
   "dashboard": {
@@ -234,9 +242,6 @@
     "noAchievements": "Complete quests to earn your first achievement.",
     "interactiveMap": "Interactive Map",
     "mapSubtitle": "Golden Horde Territory · Select a city to explore",
-    "routes": "Routes",
-    "cities": "Cities",
-    "rivers": "Rivers",
     "aiTeaserTitle": "AI Historian",
     "aiTeaserSubtitle": "Ask anything",
     "aiTeaserQuote": "\"The Golden Horde was arguably the most cosmopolitan empire of the 13th century. Ask me about its trade, politics, or art...\"",

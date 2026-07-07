@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../componen
 import { DataTable, type DataTableColumn } from "../components/DataTable";
 import { FormDialog } from "../components/FormDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { LanguageTabs } from "../components/LanguageTabs";
 import {
   useAdminAchievementDefinitions,
   useCreateAdminAchievementDefinition,
@@ -20,6 +21,9 @@ import {
   type AdminAchievementDefinitionInput,
   type AchievementMetric,
 } from "../lib/adminApi";
+import { displayField } from "../lib/localizedDisplay";
+
+type Lang = "kk" | "ru" | "en";
 
 const METRICS: { value: AchievementMetric; label: string }[] = [
   { value: "xp", label: "Total XP" },
@@ -34,8 +38,12 @@ const METRICS: { value: AchievementMetric; label: string }[] = [
 
 const EMPTY_FORM: AdminAchievementDefinitionInput = {
   key: "",
-  title: "",
-  description: "",
+  title_kk: "",
+  title_ru: null,
+  title_en: null,
+  description_kk: "",
+  description_ru: null,
+  description_en: null,
   icon_url: null,
   metric: "quests_completed",
   threshold: 1,
@@ -52,6 +60,7 @@ export function AchievementDefinitionsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AdminAchievementDefinition | null>(null);
   const [form, setForm] = useState<AdminAchievementDefinitionInput>(EMPTY_FORM);
+  const [lang, setLang] = useState<Lang>("kk");
   const [deleteTarget, setDeleteTarget] = useState<AdminAchievementDefinition | null>(null);
   const [previewTarget, setPreviewTarget] = useState<AdminAchievementDefinition | null>(null);
 
@@ -66,6 +75,7 @@ export function AchievementDefinitionsPage() {
   const openCreate = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
+    setLang("kk");
     setDialogOpen(true);
   };
 
@@ -73,8 +83,12 @@ export function AchievementDefinitionsPage() {
     setEditing(definition);
     setForm({
       key: definition.key,
-      title: definition.title,
-      description: definition.description,
+      title_kk: definition.title_kk,
+      title_ru: definition.title_ru,
+      title_en: definition.title_en,
+      description_kk: definition.description_kk,
+      description_ru: definition.description_ru,
+      description_en: definition.description_en,
       icon_url: definition.icon_url,
       metric: definition.metric,
       threshold: definition.threshold,
@@ -83,6 +97,7 @@ export function AchievementDefinitionsPage() {
       sort_order: definition.sort_order,
       is_active: definition.is_active,
     });
+    setLang("kk");
     setDialogOpen(true);
   };
 
@@ -116,7 +131,7 @@ export function AchievementDefinitionsPage() {
   const metricLabel = (metric: AchievementMetric) => METRICS.find((m) => m.value === metric)?.label ?? metric;
 
   const columns: DataTableColumn<AdminAchievementDefinition>[] = [
-    { key: "title", header: "Title", render: (d) => <span className="font-medium">{d.title}</span> },
+    { key: "title", header: "Title", render: (d) => <span className="font-medium">{displayField(d, "title")}</span> },
     { key: "key", header: "Key", render: (d) => d.key },
     { key: "condition", header: "Condition", render: (d) => `${metricLabel(d.metric)} ≥ ${d.threshold.toLocaleString()}` },
     { key: "rewards", header: "Rewards", render: (d) => `${d.reward_xp} XP / ${d.reward_coins} coins` },
@@ -192,19 +207,36 @@ export function AchievementDefinitionsPage() {
         onSubmit={handleSubmit}
         isSubmitting={createMutation.isPending || updateMutation.isPending}
       >
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label>Key (unique slug)</Label>
-            <Input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} required />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Title</Label>
-            <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
-          </div>
+        <div className="space-y-1.5">
+          <Label>Key (unique slug)</Label>
+          <Input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} required />
+        </div>
+
+        <div className="pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }} />
+
+        <div className="space-y-1.5">
+          <Label>Language</Label>
+          <LanguageTabs value={lang} onChange={(value) => setLang(value as Lang)} />
+          <p className="text-xs text-muted-foreground">
+            Switching tabs edits that language only — the other two are untouched until you fill them in.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Title</Label>
+          <Input
+            value={form[`title_${lang}`] ?? ""}
+            onChange={(e) => setForm({ ...form, [`title_${lang}`]: e.target.value })}
+            required={lang === "kk"}
+          />
         </div>
         <div className="space-y-1.5">
           <Label>Description</Label>
-          <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required />
+          <Textarea
+            value={form[`description_${lang}`] ?? ""}
+            onChange={(e) => setForm({ ...form, [`description_${lang}`]: e.target.value })}
+            required={lang === "kk"}
+          />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
@@ -275,8 +307,8 @@ export function AchievementDefinitionsPage() {
                 {previewTarget.icon_url || "🏆"}
               </div>
               <div>
-                <div className="text-sm orda-cinzel" style={{ color: "#F6F4EC" }}>{previewTarget.title}</div>
-                <div className="text-xs" style={{ color: "#B7BAC3" }}>{previewTarget.description}</div>
+                <div className="text-sm orda-cinzel" style={{ color: "#F6F4EC" }}>{displayField(previewTarget, "title")}</div>
+                <div className="text-xs" style={{ color: "#B7BAC3" }}>{displayField(previewTarget, "description")}</div>
                 <div className="text-[11px] mt-1" style={{ color: "#D4AF37" }}>
                   {metricLabel(previewTarget.metric)} ≥ {previewTarget.threshold.toLocaleString()} · +{previewTarget.reward_xp} XP / +{previewTarget.reward_coins} coins
                 </div>
@@ -290,7 +322,7 @@ export function AchievementDefinitionsPage() {
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="Delete achievement definition"
-        description={`Are you sure you want to delete "${deleteTarget?.title}"? Users who already earned it keep the badge, but no one else will be able to.`}
+        description={`Are you sure you want to delete "${deleteTarget ? displayField(deleteTarget, "title") : ""}"? Users who already earned it keep the badge, but no one else will be able to.`}
         onConfirm={handleDelete}
       />
     </div>

@@ -87,7 +87,7 @@ function cityIdFromPathname(pathname: string): string | null {
 }
 
 interface City {
-  id: string; name: string; subtitle: string;
+  id: string; slug: string; name: string; subtitle: string;
   cx: number; cy: number;
   description: string; founded: string; population: string;
   facts: string[]; importance: string; tradeInfo: string | null;
@@ -100,44 +100,135 @@ interface Artifact {
   rarity: "common" | "rare" | "legendary";
 }
 
-const CITY_SLUGS: Record<string, string> = {
-  "Sarai Batu": "sarai-batu",
-  "Sarayshyk": "sarayshyk",
-  "Otrar": "otrar",
-  "Sygnak": "sygnak",
-  "Bolgar": "bolgar",
-  "Crimea": "crimea",
-};
+// Real-world geographic bounding box the map's territory art was drawn to cover
+// (Crimea in the west to Otrar in the east, Bolgar in the north to Otrar in the
+// south, padded ~15% so no city sits flush against the SVG edge). Any city's
+// lat/lng — including ones an admin adds later — projects into the map from
+// this box; there is no per-city hardcoded position anymore.
+const MAP_GEO_BOUNDS = { minLng: 33, maxLng: 71, minLat: 41, maxLat: 57 };
+// Usable interior of the `viewBox="0 0 900 480"` SVG, leaving margin for the
+// title text, compass rose (top-right), and scale bar (bottom-left).
+const MAP_PIXEL_BOUNDS = { left: 110, right: 770, top: 100, bottom: 420 };
 
-const CITY_LAYOUTS: Record<string, { cx: number; cy: number; color: string; size: number }> = {
-  "sarai-batu": { cx: 370, cy: 295, color: "#D4AF37", size: 10 },
-  "sarayshyk": { cx: 490, cy: 295, color: "#C9962C", size: 7 },
-  "otrar": { cx: 730, cy: 415, color: "#C9962C", size: 7 },
-  "sygnak": { cx: 630, cy: 415, color: "#B7BAC3", size: 6 },
-  "bolgar": { cx: 418, cy: 105, color: "#B7BAC3", size: 6 },
-  "crimea": { cx: 92, cy: 335, color: "#B7BAC3", size: 6 },
+function projectLatLng(lat: number, lng: number): { cx: number; cy: number } {
+  const { minLng, maxLng, minLat, maxLat } = MAP_GEO_BOUNDS;
+  const { left, right, top, bottom } = MAP_PIXEL_BOUNDS;
+  const xRatio = (lng - minLng) / (maxLng - minLng);
+  // Latitude increases northward but SVG y increases downward, so invert.
+  const yRatio = (maxLat - lat) / (maxLat - minLat);
+  return {
+    cx: left + xRatio * (right - left),
+    cy: top + yRatio * (bottom - top),
+  };
+}
+
+// After projecting, nudge apart any markers that would sit close enough for
+// their rings/labels to collide (two real cities can be geographically close
+// without their map labels being legible at that spacing) — small, generic,
+// and works for any number of cities rather than special-casing a pair.
+function resolveMarkerOverlaps<T extends { cx: number; cy: number }>(points: T[]): T[] {
+  const MIN_SEPARATION = 70;
+  const result = points.map((p) => ({ ...p }));
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = 0; i < result.length; i++) {
+      for (let j = i + 1; j < result.length; j++) {
+        const dx = result[j].cx - result[i].cx;
+        const dy = result[j].cy - result[i].cy;
+        const dist = Math.hypot(dx, dy) || 0.0001;
+        if (dist < MIN_SEPARATION) {
+          const push = (MIN_SEPARATION - dist) / 2;
+          const ux = dx / dist;
+          const uy = dy / dist;
+          result[i].cx -= ux * push;
+          result[i].cy -= uy * push;
+          result[j].cx += ux * push;
+          result[j].cy += uy * push;
+        }
+      }
+    }
+  }
+  return result;
+}
+
+// Marker visual tier (color/size) is styling, not position, and stays hand-curated
+// by slug like before — the Golden Horde's own capital reads as the largest gold
+// dot, other capitals/hubs as bronze, everything else as silver.
+const CITY_TIERS: Record<string, { color: string; size: number }> = {
+  "sarai-batu": { color: "#D4AF37", size: 10 },
+  "sarayshyk": { color: "#C9962C", size: 7 },
+  "otrar": { color: "#C9962C", size: 7 },
+  "sygnak": { color: "#B7BAC3", size: 6 },
+  "bolgar": { color: "#B7BAC3", size: 6 },
+  "crimea": { color: "#B7BAC3", size: 6 },
 };
+const DEFAULT_CITY_TIER = { color: "#B7BAC3", size: 6 };
 
 function mapApiCity(city: ApiCity, t: TFunction): City {
-  const slug = CITY_SLUGS[city.name];
-  const layout = (slug && CITY_LAYOUTS[slug]) || { cx: 360, cy: 260, color: "#B7BAC3", size: 6 };
-  const subtitle = slug ? t(`map.citySubtitles.${slug}`) : city.historical_period;
+  // The 6 launch cities have curated map styling (tier) and a translated one-line
+  // subtitle; any other city (e.g. one an admin adds later) falls back to plain
+  // colors/size and its real historical_period instead of a missing translation key.
+  const isCuratedCity = Boolean(CITY_TIERS[city.slug]);
+  const tier = CITY_TIERS[city.slug] || DEFAULT_CITY_TIER;
+  const { cx, cy } = projectLatLng(city.latitude, city.longitude);
+  const subtitle = isCuratedCity ? t(`map.citySubtitles.${city.slug}`) : city.historical_period;
 
   return {
     id: city.id,
+    slug: city.slug,
     name: city.name,
     subtitle,
-    cx: layout.cx,
-    cy: layout.cy,
+    cx,
+    cy,
     description: city.description,
     founded: city.historical_period,
     population: city.population_estimate || t("common.unknown"),
     facts: city.historical_facts?.length ? city.historical_facts : [city.significance || city.description, city.historical_period],
     importance: city.significance || city.description,
     tradeInfo: city.trade_info ?? null,
-    color: layout.color,
-    size: layout.size,
+    color: tier.color,
+    size: tier.size,
   };
+}
+
+// Which journeys feature which cities, grounded in each city's real seeded role
+// (see map.citySubtitles / significance text): Sarai Batu and Sygnak were khanate
+// capitals, Sarayshyk/Otrar/Crimea were caravan-trade hubs, Otrar/Bolgar/Sygnak are
+// the sites with the richest archaeological history. A city with no entry here
+// (e.g. one an admin adds before categorizing it) shows on every journey by default
+// rather than silently disappearing.
+const JOURNEY_CITY_TAGS: Record<string, CharType[]> = {
+  "sarai-batu": ["diplomat", "merchant"],
+  "sarayshyk": ["merchant", "explorer"],
+  "otrar": ["merchant", "explorer"],
+  "sygnak": ["diplomat", "explorer"],
+  "bolgar": ["explorer"],
+  "crimea": ["diplomat", "merchant"],
+};
+
+// Suggested visiting order per journey — also the sequence routes are drawn in,
+// and its first city is the one highlighted for first-time visitors.
+const JOURNEY_ROUTE_ORDER: Record<CharType, string[]> = {
+  diplomat: ["sarai-batu", "sygnak", "crimea"],
+  merchant: ["sarai-batu", "sarayshyk", "otrar", "crimea"],
+  explorer: ["otrar", "bolgar", "sygnak", "sarayshyk"],
+};
+
+function citiesForJourney(cities: City[], journey: CharType | undefined): City[] {
+  if (!journey) return cities;
+  return cities.filter((c) => (JOURNEY_CITY_TAGS[c.slug] ?? [journey]).includes(journey));
+}
+
+// Gentle perpendicular-offset arc between two map points, matching the curved
+// caravan-route look of the original hand-drawn paths.
+function routeCurvePath(from: { cx: number; cy: number }, to: { cx: number; cy: number }): string {
+  const mx = (from.cx + to.cx) / 2;
+  const my = (from.cy + to.cy) / 2;
+  const dx = to.cx - from.cx;
+  const dy = to.cy - from.cy;
+  const bow = 0.15;
+  const ctrlX = mx - dy * bow;
+  const ctrlY = my + dx * bow;
+  return `M ${from.cx},${from.cy} Q ${ctrlX},${ctrlY} ${to.cx},${to.cy}`;
 }
 
 function mapApiArtifact(artifact: ApiArtifact, cityName: string, t: TFunction): Artifact {
@@ -1200,10 +1291,59 @@ function StoryIntro({ character, onBegin }: { character: CharType; onBegin: () =
 }
 
 // ─── INTERACTIVE MAP ──────────────────────────────────────────────────────────
-function InteractiveMap({ cities, onSelectCity }: { cities: City[]; onSelectCity: (city: City) => void }) {
+type MapLayerKey = "cities" | "rivers" | "tradeRoutes" | "borders";
+const MAP_INTRO_STORAGE_KEY = "orda-map-intro-seen";
+
+function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs }: {
+  cities: City[];
+  onSelectCity: (city: City) => void;
+  journey?: CharType;
+  completedCitySlugs?: Set<string>;
+}) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1);
+  const [layers, setLayers] = useState<Record<MapLayerKey, boolean>>({
+    cities: true, rivers: true, tradeRoutes: true, borders: true,
+  });
+  const [introDismissed, setIntroDismissed] = useState(() =>
+    typeof window === "undefined" || window.localStorage.getItem(MAP_INTRO_STORAGE_KEY) === "1"
+  );
+
+  const dismissIntro = () => {
+    setIntroDismissed(true);
+    if (typeof window !== "undefined") window.localStorage.setItem(MAP_INTRO_STORAGE_KEY, "1");
+  };
+
+  const toggleLayer = (key: MapLayerKey) => setLayers(prev => ({ ...prev, [key]: !prev[key] }));
+
+  // Journey filtering + anti-overlap nudge happen together so a smaller subset
+  // (fewer cities on screen) gets less/no nudging than the full 6-city view.
+  const visibleCities = resolveMarkerOverlaps(citiesForJourney(cities, journey));
+  // `Map` the class is shadowed in this file by the `Map` icon imported from
+  // lucide-react above — `globalThis.Map` reaches past that shadowing to the
+  // real built-in constructor.
+  const citiesBySlug = new globalThis.Map(visibleCities.map(c => [c.slug, c]));
+
+  const routeOrder = journey ? JOURNEY_ROUTE_ORDER[journey].filter(slug => citiesBySlug.has(slug)) : [];
+  const routeSegments = routeOrder.slice(0, -1).map((slug, i) => {
+    const nextSlug = routeOrder[i + 1];
+    const from = citiesBySlug.get(slug)!;
+    const to = citiesBySlug.get(nextSlug)!;
+    const fromDone = completedCitySlugs?.has(slug) ?? false;
+    const toDone = completedCitySlugs?.has(nextSlug) ?? false;
+    const state: "completed" | "current" | "future" = fromDone && toDone ? "completed" : fromDone ? "current" : "future";
+    return { key: `${slug}-${nextSlug}`, path: routeCurvePath(from, to), state };
+  });
+
+  const showIntro = Boolean(journey) && !introDismissed;
+  const recommendedSlug = journey ? JOURNEY_ROUTE_ORDER[journey][0] : undefined;
+
+  const LAYER_TOGGLES: { key: MapLayerKey; label: string }[] = [
+    { key: "cities", label: t("map.layers.cities") },
+    { key: "rivers", label: t("map.layers.rivers") },
+    { key: "tradeRoutes", label: t("map.layers.tradeRoutes") },
+    { key: "borders", label: t("map.layers.borders") },
+  ];
 
   return (
     <div className="relative w-full h-full rounded-[16px] overflow-hidden"
@@ -1217,6 +1357,35 @@ function InteractiveMap({ cities, onSelectCity }: { cities: City[]; onSelectCity
       <div className="absolute inset-0 pointer-events-none"
         style={{ background: "radial-gradient(ellipse at 45% 50%, rgba(212,175,55,0.04) 0%, transparent 65%)" }} />
 
+      {/* Layer toggles */}
+      <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-1.5" style={{ maxWidth: "calc(100% - 24px)" }}>
+        {LAYER_TOGGLES.map(({ key, label }) => (
+          <button key={key} onClick={() => toggleLayer(key)}
+            className="text-[10px] sm:text-xs px-2.5 py-1 rounded-lg orda-inter transition-colors"
+            style={{
+              background: layers[key] ? "rgba(212,175,55,0.12)" : "rgba(255,255,255,0.04)",
+              color: layers[key] ? "#D4AF37" : "#B7BAC3",
+              border: `1px solid ${layers[key] ? "rgba(212,175,55,0.2)" : "rgba(255,255,255,0.06)"}`,
+            }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* First-visit guidance */}
+      {showIntro && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 glass rounded-full pl-4 pr-2 py-2 flex items-center gap-2 animate-fade-in"
+          style={{ maxWidth: "min(360px, 90%)" }}>
+          <span className="text-[11px] sm:text-xs orda-inter text-[#F6F4EC] whitespace-nowrap overflow-hidden text-ellipsis">
+            {t("map.firstVisitHint")}
+          </span>
+          <button onClick={dismissIntro} aria-label={t("map.dismissHint")}
+            className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors">
+            <X size={11} color="#B7BAC3" />
+          </button>
+        </div>
+      )}
+
       <svg className="w-full h-full animate-map-reveal" viewBox="0 0 900 480" preserveAspectRatio="xMidYMid meet">
         <defs>
           <filter id="city-glow">
@@ -1225,6 +1394,10 @@ function InteractiveMap({ cities, onSelectCity }: { cities: City[]; onSelectCity
           </filter>
           <filter id="territory-glow">
             <feGaussianBlur stdDeviation="8" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <filter id="route-current-glow">
+            <feGaussianBlur stdDeviation="2.5" result="blur" />
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
           <radialGradient id="territory-fill" cx="45%" cy="50%" r="55%">
@@ -1238,14 +1411,16 @@ function InteractiveMap({ cities, onSelectCity }: { cities: City[]; onSelectCity
           </linearGradient>
         </defs>
 
-        {/* Territory outline */}
-        <path
-          d="M 75,328 C 65,268 75,218 132,188 L 202,152 L 304,112 L 422,82 C 490,75 542,88 582,108 L 672,148 L 772,238 L 820,332 L 800,422 L 742,458 L 648,468 L 555,462 L 458,452 L 358,440 L 258,418 L 172,388 L 92,350 Z"
-          fill="url(#territory-fill)"
-          stroke="rgba(212,175,55,0.18)"
-          strokeWidth="1.5"
-          filter="url(#territory-glow)"
-        />
+        {/* Territory outline (Historical Borders layer) */}
+        {layers.borders && (
+          <path
+            d="M 75,328 C 65,268 75,218 132,188 L 202,152 L 304,112 L 422,82 C 490,75 542,88 582,108 L 672,148 L 772,238 L 820,332 L 800,422 L 742,458 L 648,468 L 555,462 L 458,452 L 358,440 L 258,418 L 172,388 L 92,350 Z"
+            fill="url(#territory-fill)"
+            stroke="rgba(212,175,55,0.18)"
+            strokeWidth="1.5"
+            filter="url(#territory-glow)"
+          />
+        )}
 
         {/* Grid lines (latitude/longitude feel) */}
         {[150, 250, 350, 450].map(y => (
@@ -1257,40 +1432,69 @@ function InteractiveMap({ cities, onSelectCity }: { cities: City[]; onSelectCity
             stroke="rgba(255,255,255,0.025)" strokeWidth="1" strokeDasharray="4 8" />
         ))}
 
-        {/* Volga River */}
-        <path d="M 408,40 C 400,100 388,180 372,295 C 362,370 358,430 355,480"
-          stroke="rgba(87,214,209,0.2)" strokeWidth="2" fill="none" />
+        {/* Rivers layer */}
+        {layers.rivers && (
+          <>
+            {/* Volga River */}
+            <path d="M 408,40 C 400,100 388,180 372,295 C 362,370 358,430 355,480"
+              stroke="rgba(87,214,209,0.2)" strokeWidth="2" fill="none" />
+            {/* Ural River */}
+            <path d="M 498,30 C 492,120 488,210 488,295 L 488,480"
+              stroke="rgba(87,214,209,0.15)" strokeWidth="1.5" fill="none" />
+            {/* Syr Darya */}
+            <path d="M 820,420 C 780,428 730,432 680,432 C 640,432 580,438 540,460"
+              stroke="rgba(87,214,209,0.15)" strokeWidth="1.5" fill="none" />
+          </>
+        )}
 
-        {/* Ural River */}
-        <path d="M 498,30 C 492,120 488,210 488,295 L 488,480"
-          stroke="rgba(87,214,209,0.15)" strokeWidth="1.5" fill="none" />
-
-        {/* Syr Darya */}
-        <path d="M 820,420 C 780,428 730,432 680,432 C 640,432 580,438 540,460"
-          stroke="rgba(87,214,209,0.15)" strokeWidth="1.5" fill="none" />
-
-        {/* Trade Routes */}
-        <path d="M 92,335 C 150,318 270,310 370,295"
-          className="route-path" stroke="url(#route-grad)" strokeWidth="1.5" fill="none" />
-        <path d="M 370,295 L 490,295"
-          className="route-path-rev" stroke="url(#route-grad)" strokeWidth="1.5" fill="none" />
-        <path d="M 490,295 C 530,348 572,398 630,420"
-          className="route-path" stroke="url(#route-grad)" strokeWidth="1.5" fill="none" />
-        <path d="M 630,420 L 730,420"
-          className="route-path-rev" stroke="url(#route-grad)" strokeWidth="1.5" fill="none" />
-        <path d="M 370,295 L 418,108"
-          className="route-path" stroke="url(#route-grad)" strokeWidth="1.5" fill="none" />
+        {/* Trade Routes layer — animated, colored by real quest-completion progress */}
+        {layers.tradeRoutes && routeSegments.map((segment) => {
+          if (segment.state === "completed") {
+            return (
+              <path key={segment.key} d={segment.path} className="route-path"
+                stroke="#D4AF37" strokeOpacity="0.55" strokeWidth="1.5" fill="none" />
+            );
+          }
+          if (segment.state === "current") {
+            return (
+              <path key={segment.key} d={segment.path} className="route-path animate-map-glow"
+                stroke="#D4AF37" strokeOpacity="0.9" strokeWidth="2" fill="none"
+                filter="url(#route-current-glow)" />
+            );
+          }
+          return (
+            <path key={segment.key} d={segment.path}
+              stroke="rgba(183,186,195,0.22)" strokeWidth="1.25" strokeDasharray="3 6" fill="none" />
+          );
+        })}
+        {/* Decorative trade routes when no journey (e.g. landing preview) is active */}
+        {layers.tradeRoutes && !journey && visibleCities.length > 1 && (() => {
+          const sorted = [...visibleCities].sort((a, b) => a.cx - b.cx);
+          return sorted.slice(0, -1).map((from, i) => (
+            <path key={`${from.slug}-${sorted[i + 1].slug}`} d={routeCurvePath(from, sorted[i + 1])}
+              className={i % 2 === 0 ? "route-path" : "route-path-rev"}
+              stroke="url(#route-grad)" strokeWidth="1.5" fill="none" />
+          ));
+        })()}
 
         {/* City markers */}
-        {cities.map((city) => {
+        {layers.cities && visibleCities.map((city) => {
           const isHov = hovered === city.id;
+          const isRecommended = showIntro && city.slug === recommendedSlug;
           return (
             <g key={city.id} className="city-marker"
               onClick={() => onSelectCity(city)}
               onMouseEnter={() => setHovered(city.id)}
               onMouseLeave={() => setHovered(null)}>
 
-              {/* Pulse ring */}
+              {/* Recommended starting-city highlight (persistent, first visit only) */}
+              {isRecommended && (
+                <circle cx={city.cx} cy={city.cy} r={city.size + 14}
+                  fill="none" stroke="#D4AF37" strokeWidth="1.25" opacity="0.5"
+                  style={{ animation: "pulse-ring 2.2s ease-out infinite" }} />
+              )}
+
+              {/* Pulse ring (hover) */}
               {isHov && (
                 <circle cx={city.cx} cy={city.cy} r={city.size + 12}
                   fill="none" stroke={city.color} strokeWidth="1" opacity="0.4"
@@ -1321,7 +1525,7 @@ function InteractiveMap({ cities, onSelectCity }: { cities: City[]; onSelectCity
               <text x={city.cx} y={city.cy + city.size + 18}
                 textAnchor="middle" fill={isHov ? city.color : "#B7BAC3"}
                 fontSize="10" fontFamily="Cinzel, serif" letterSpacing="1"
-                style={{ transition: "fill 0.2s ease", fontWeight: city.id === "sarai-batu" ? "700" : "400" }}>
+                style={{ transition: "fill 0.2s ease", fontWeight: city.slug === "sarai-batu" ? "700" : "400" }}>
                 {city.name.toUpperCase()}
               </text>
             </g>
@@ -1356,13 +1560,13 @@ function InteractiveMap({ cities, onSelectCity }: { cities: City[]; onSelectCity
 
       {/* Hover tooltip */}
       {hovered && (() => {
-        const city = cities.find(c => c.id === hovered);
+        const city = visibleCities.find(c => c.id === hovered);
         if (!city) return null;
         return (
-          <div className="absolute bottom-4 left-4 glass rounded-[14px] px-4 py-3 pointer-events-none animate-fade-in"
-            style={{ maxWidth: 240 }}>
-            <div className="text-[#D4AF37] text-xs orda-cinzel tracking-widest mb-1">{city.name}</div>
-            <div className="text-[#B7BAC3] text-xs orda-inter">{city.subtitle}</div>
+          <div className="absolute bottom-4 left-4 right-4 sm:right-auto glass rounded-[14px] px-4 py-3 pointer-events-none animate-fade-in"
+            style={{ maxWidth: "min(240px, 100%)" }}>
+            <div className="text-[#D4AF37] text-xs orda-cinzel tracking-widest mb-1 truncate">{city.name}</div>
+            <div className="text-[#B7BAC3] text-xs orda-inter truncate">{city.subtitle}</div>
             <div className="text-[#B7BAC3] text-xs orda-inter mt-1">{t("map.clickToExplore")}</div>
           </div>
         );
@@ -1403,6 +1607,16 @@ function Dashboard({ character, onSelectCity, onNav }: {
     .find(q => q.completionStatus !== "completed") || null;
 
   const achievements = achievementsQuery.data || [];
+
+  // A city counts as "completed" for the map's route coloring once the player has
+  // finished at least one quest there — the same real progress data already
+  // powering questsCompleted above (no separate "city visited" tracking exists yet).
+  const completedCitySlugs = new Set(
+    (questsData?.data || [])
+      .filter(q => q.completion_status === "completed")
+      .map(q => cities.find(c => c.id === q.city_id)?.slug)
+      .filter((slug): slug is string => Boolean(slug))
+  );
 
   return (
     <div className="min-h-screen pt-16 flex flex-col" style={{ background: "#0F1115" }}>
@@ -1534,26 +1748,12 @@ function Dashboard({ character, onSelectCity, onNav }: {
 
         {/* Map Center */}
         <main className="order-1 lg:order-2 p-4 flex flex-col overflow-hidden min-h-[460px] lg:min-h-0">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="orda-cinzel text-base font-bold text-[#F6F4EC] tracking-wider">{t("dashboard.interactiveMap")}</h2>
-              <p className="text-xs text-[#B7BAC3] orda-inter">{t("dashboard.mapSubtitle")}</p>
-            </div>
-            <div className="flex gap-2">
-              {[t("dashboard.routes"), t("dashboard.cities"), t("dashboard.rivers")].map((label, i) => (
-                <button key={label} className="text-xs px-3 py-1.5 rounded-lg orda-inter transition-colors"
-                  style={{
-                    background: i === 0 ? "rgba(212,175,55,0.12)" : "rgba(255,255,255,0.04)",
-                    color: i === 0 ? "#D4AF37" : "#B7BAC3",
-                    border: `1px solid ${i === 0 ? "rgba(212,175,55,0.2)" : "rgba(255,255,255,0.06)"}`,
-                  }}>
-                  {label}
-                </button>
-              ))}
-            </div>
+          <div className="mb-4">
+            <h2 className="orda-cinzel text-base font-bold text-[#F6F4EC] tracking-wider">{t("dashboard.interactiveMap")}</h2>
+            <p className="text-xs text-[#B7BAC3] orda-inter">{t("dashboard.mapSubtitle")}</p>
           </div>
           <div className="flex-1">
-            <InteractiveMap cities={cities} onSelectCity={onSelectCity} />
+            <InteractiveMap cities={cities} onSelectCity={onSelectCity} journey={character} completedCitySlugs={completedCitySlugs} />
           </div>
           {/* City quick-access row */}
           <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
@@ -3116,10 +3316,10 @@ export default function App() {
           <QuestView onBack={goBack} />
         )}
         {view === "certificate" && (
-          <Certificate character={character} onBack={() => navigate("dashboard")} />
+          <Certificate character={character} onBack={goBack} />
         )}
         {view === "passport" && (
-          <Passport onBack={() => navigate("dashboard")} onLogout={() => navigate("landing")} />
+          <Passport onBack={goBack} onLogout={() => navigate("landing")} />
         )}
         {view === "privacy" && <LegalPage page="privacy" onNav={navigate} />}
         {view === "terms" && <LegalPage page="terms" onNav={navigate} />}

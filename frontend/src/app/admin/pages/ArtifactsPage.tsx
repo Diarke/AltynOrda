@@ -11,6 +11,7 @@ import { DataTable, type DataTableColumn } from "../components/DataTable";
 import { FormDialog } from "../components/FormDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ImageUploader } from "../components/ImageUploader";
+import { LanguageTabs } from "../components/LanguageTabs";
 import { ArtifactPreview } from "../components/EntityPreviews";
 import {
   useAdminArtifacts,
@@ -18,20 +19,31 @@ import {
   useUpdateAdminArtifact,
   useDeleteAdminArtifact,
   useAdminCities,
+  type AdminArtifact,
   type AdminArtifactInput,
 } from "../lib/adminApi";
-import type { ApiArtifact } from "../../lib/api";
+import { displayField } from "../lib/localizedDisplay";
+
+type Lang = "kk" | "ru" | "en";
 
 const RARITIES = ["common", "rare", "legendary"];
 
 const EMPTY_FORM: AdminArtifactInput = {
   city_id: "",
-  name: "",
-  description: "",
-  era: "",
   rarity: "common",
   image_url: null,
-  historical_context: null,
+  name_kk: "",
+  name_ru: null,
+  name_en: null,
+  description_kk: "",
+  description_ru: null,
+  description_en: null,
+  era_kk: "",
+  era_ru: null,
+  era_en: null,
+  historical_context_kk: null,
+  historical_context_ru: null,
+  historical_context_en: null,
 };
 
 export function ArtifactsPage() {
@@ -40,10 +52,11 @@ export function ArtifactsPage() {
   const [cityFilter, setCityFilter] = useState("all");
   const [rarityFilter, setRarityFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<ApiArtifact | null>(null);
+  const [editing, setEditing] = useState<AdminArtifact | null>(null);
   const [form, setForm] = useState<AdminArtifactInput>(EMPTY_FORM);
-  const [deleteTarget, setDeleteTarget] = useState<ApiArtifact | null>(null);
-  const [previewTarget, setPreviewTarget] = useState<ApiArtifact | null>(null);
+  const [lang, setLang] = useState<Lang>("kk");
+  const [deleteTarget, setDeleteTarget] = useState<AdminArtifact | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<AdminArtifact | null>(null);
 
   const { data, isLoading } = useAdminArtifacts(page, 20, {
     q: search || undefined,
@@ -56,25 +69,38 @@ export function ArtifactsPage() {
   const deleteMutation = useDeleteAdminArtifact();
 
   const cities = citiesData?.data ?? [];
-  const cityName = (id: string) => cities.find((c) => c.id === id)?.name ?? id;
+  const cityName = (id: string) => {
+    const city = cities.find((c) => c.id === id);
+    return city ? displayField(city, "name") : id;
+  };
 
   const openCreate = () => {
     setEditing(null);
     setForm({ ...EMPTY_FORM, city_id: cities[0]?.id ?? "" });
+    setLang("kk");
     setDialogOpen(true);
   };
 
-  const openEdit = (artifact: ApiArtifact) => {
+  const openEdit = (artifact: AdminArtifact) => {
     setEditing(artifact);
     setForm({
       city_id: artifact.city_id,
-      name: artifact.name,
-      description: artifact.description,
-      era: artifact.era,
       rarity: artifact.rarity,
-      image_url: artifact.image_url ?? null,
-      historical_context: artifact.historical_context ?? null,
+      image_url: artifact.image_url,
+      name_kk: artifact.name_kk,
+      name_ru: artifact.name_ru,
+      name_en: artifact.name_en,
+      description_kk: artifact.description_kk,
+      description_ru: artifact.description_ru,
+      description_en: artifact.description_en,
+      era_kk: artifact.era_kk,
+      era_ru: artifact.era_ru,
+      era_en: artifact.era_en,
+      historical_context_kk: artifact.historical_context_kk,
+      historical_context_ru: artifact.historical_context_ru,
+      historical_context_en: artifact.historical_context_en,
     });
+    setLang("kk");
     setDialogOpen(true);
   };
 
@@ -105,12 +131,21 @@ export function ArtifactsPage() {
     }
   };
 
-  const columns: DataTableColumn<ApiArtifact>[] = [
-    { key: "name", header: "Name", render: (a) => <span className="font-medium">{a.name}</span> },
+  const columns: DataTableColumn<AdminArtifact>[] = [
+    { key: "name", header: "Name", render: (a) => <span className="font-medium">{displayField(a, "name")}</span> },
     { key: "city", header: "City", render: (a) => cityName(a.city_id) },
-    { key: "era", header: "Era", render: (a) => a.era },
+    { key: "era", header: "Era", render: (a) => displayField(a, "era") },
     { key: "rarity", header: "Rarity", render: (a) => a.rarity },
   ];
+
+  const previewArtifact = {
+    name: form[`name_${lang}`] ?? "",
+    description: form[`description_${lang}`] ?? "",
+    era: form[`era_${lang}`] ?? "",
+    rarity: form.rarity,
+    historical_context: form[`historical_context_${lang}`],
+    image_url: form.image_url,
+  };
 
   return (
     <div className="space-y-6">
@@ -144,7 +179,7 @@ export function ArtifactsPage() {
           <SelectContent>
             <SelectItem value="all">All cities</SelectItem>
             {cities.map((city) => (
-              <SelectItem key={city.id} value={city.id}>{city.name}</SelectItem>
+              <SelectItem key={city.id} value={city.id}>{displayField(city, "name")}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -204,56 +239,77 @@ export function ArtifactsPage() {
                 <SelectContent>
                   {cities.map((city) => (
                     <SelectItem key={city.id} value={city.id}>
-                      {city.name}
+                      {displayField(city, "name")}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Name</Label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Description</Label>
-              <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Era</Label>
-                <Input value={form.era} onChange={(e) => setForm({ ...form, era: e.target.value })} required />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Rarity</Label>
-                <Select value={form.rarity} onValueChange={(value) => setForm({ ...form, rarity: value })}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {RARITIES.map((rarity) => (
-                      <SelectItem key={rarity} value={rarity}>
-                        {rarity}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Historical context</Label>
-              <Textarea
-                value={form.historical_context ?? ""}
-                onChange={(e) => setForm({ ...form, historical_context: e.target.value || null })}
-              />
+              <Label>Rarity</Label>
+              <Select value={form.rarity} onValueChange={(value) => setForm({ ...form, rarity: value })}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RARITIES.map((rarity) => (
+                    <SelectItem key={rarity} value={rarity}>
+                      {rarity}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label>Image</Label>
               <ImageUploader value={form.image_url ?? null} onChange={(url) => setForm({ ...form, image_url: url })} aspect={1} />
             </div>
+
+            <div className="pt-2 border-t" />
+
+            <div className="space-y-1.5">
+              <Label>Language</Label>
+              <LanguageTabs value={lang} onChange={(value) => setLang(value as Lang)} />
+              <p className="text-xs text-muted-foreground">
+                Switching tabs edits that language only — the other two are untouched until you fill them in.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Name</Label>
+              <Input
+                value={form[`name_${lang}`] ?? ""}
+                onChange={(e) => setForm({ ...form, [`name_${lang}`]: e.target.value })}
+                required={lang === "kk"}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Description</Label>
+              <Textarea
+                value={form[`description_${lang}`] ?? ""}
+                onChange={(e) => setForm({ ...form, [`description_${lang}`]: e.target.value })}
+                required={lang === "kk"}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Era</Label>
+              <Input
+                value={form[`era_${lang}`] ?? ""}
+                onChange={(e) => setForm({ ...form, [`era_${lang}`]: e.target.value })}
+                required={lang === "kk"}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Historical context</Label>
+              <Textarea
+                value={form[`historical_context_${lang}`] ?? ""}
+                onChange={(e) => setForm({ ...form, [`historical_context_${lang}`]: e.target.value || null })}
+              />
+            </div>
           </div>
           <div className="space-y-1.5 lg:sticky lg:top-0">
-            <Label className="text-muted-foreground">Live preview</Label>
-            <ArtifactPreview artifact={form} />
+            <Label className="text-muted-foreground">Live preview ({lang})</Label>
+            <ArtifactPreview artifact={previewArtifact} />
           </div>
         </div>
       </FormDialog>
@@ -263,7 +319,18 @@ export function ArtifactsPage() {
           <DialogHeader>
             <DialogTitle className="orda-cinzel">Preview</DialogTitle>
           </DialogHeader>
-          {previewTarget && <ArtifactPreview artifact={previewTarget} />}
+          {previewTarget && (
+            <ArtifactPreview
+              artifact={{
+                name: displayField(previewTarget, "name"),
+                description: displayField(previewTarget, "description"),
+                era: displayField(previewTarget, "era"),
+                rarity: previewTarget.rarity,
+                historical_context: displayField(previewTarget, "historical_context"),
+                image_url: previewTarget.image_url,
+              }}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
@@ -271,7 +338,7 @@ export function ArtifactsPage() {
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         title="Delete artifact"
-        description={`Are you sure you want to delete "${deleteTarget?.name}"? This cannot be undone.`}
+        description={`Are you sure you want to delete "${deleteTarget ? displayField(deleteTarget, "name") : ""}"? This cannot be undone.`}
         onConfirm={handleDelete}
       />
     </div>

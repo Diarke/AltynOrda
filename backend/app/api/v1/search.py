@@ -9,6 +9,7 @@ from app.dependencies.database import get_uow
 from app.enums import Language
 from app.schemas.common import SuccessResponse
 from app.schemas.search import GlobalSearchResponse, SearchResultItem
+from app.utils.i18n import resolve_localized
 
 router = APIRouter(prefix="/search", tags=["Search"])
 
@@ -33,14 +34,19 @@ async def global_search(
             )
         )
 
+    lang = language.value
     cities = await uow.cities.search(
-        search_query=query, search_fields=["name", "description", "historical_period"], limit=RESULTS_PER_CATEGORY
+        search_query=query,
+        search_fields=[f"name_{lang}", f"description_{lang}", f"historical_period_{lang}"],
+        limit=RESULTS_PER_CATEGORY,
     )
     artifacts = await uow.artifacts.search(
-        search_query=query, search_fields=["name", "era", "description"], limit=RESULTS_PER_CATEGORY
+        search_query=query,
+        search_fields=[f"name_{lang}", f"era_{lang}", f"description_{lang}"],
+        limit=RESULTS_PER_CATEGORY,
     )
     quests = await uow.quests.search(
-        search_query=query, search_fields=["title", "description"], limit=RESULTS_PER_CATEGORY
+        search_query=query, search_fields=[f"title_{lang}", f"description_{lang}"], limit=RESULTS_PER_CATEGORY
     )
     figures = await uow.historical_figures.search(
         search_query=query,
@@ -58,18 +64,31 @@ async def global_search(
     return SuccessResponse(
         data=GlobalSearchResponse(
             cities=[
-                SearchResultItem(id=c.id, type="city", title=c.name, subtitle=c.historical_period)
+                SearchResultItem(
+                    id=c.id,
+                    type="city",
+                    title=resolve_localized(c, "name", language),
+                    subtitle=resolve_localized(c, "historical_period", language),
+                )
                 for c in cities
             ],
             artifacts=[
                 SearchResultItem(
-                    id=a.id, type="artifact", title=a.name, subtitle=a.era, city_id=a.city_id
+                    id=a.id,
+                    type="artifact",
+                    title=resolve_localized(a, "name", language),
+                    subtitle=resolve_localized(a, "era", language),
+                    city_id=a.city_id,
                 )
                 for a in artifacts
             ],
             quests=[
                 SearchResultItem(
-                    id=qq.id, type="quest", title=qq.title, subtitle=qq.difficulty, city_id=qq.city_id
+                    id=qq.id,
+                    type="quest",
+                    title=resolve_localized(qq, "title", language),
+                    subtitle=qq.difficulty,
+                    city_id=qq.city_id,
                 )
                 for qq in quests
             ],

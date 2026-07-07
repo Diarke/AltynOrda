@@ -24,11 +24,20 @@ class Artifact(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         index=True,
         nullable=False,
     )
-    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    era: Mapped[str] = mapped_column(String(100), nullable=False)
     rarity: Mapped[str] = mapped_column(String(50), default="common", nullable=False)
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    historical_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    name_kk: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    name_ru: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    name_en: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description_kk: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description_ru: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description_en: Mapped[str | None] = mapped_column(Text, nullable=True)
+    era_kk: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    era_ru: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    era_en: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    historical_context_kk: Mapped[str | None] = mapped_column(Text, nullable=True)
+    historical_context_ru: Mapped[str | None] = mapped_column(Text, nullable=True)
+    historical_context_en: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     city: Mapped["City"] = relationship("City", back_populates="artifacts")

@@ -14,6 +14,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ImageUploader } from "../components/ImageUploader";
 import { LanguageTabs } from "../components/LanguageTabs";
 import { GalleryImagePreview } from "../components/EntityPreviews";
+import { displayField } from "../lib/localizedDisplay";
 import {
   useAdminGalleryImages,
   useCreateAdminGalleryImage,
@@ -60,7 +61,10 @@ export function GalleryPage() {
   const updateMutation = useUpdateAdminGalleryImage();
   const deleteMutation = useDeleteAdminGalleryImage();
 
-  const cityName = (id: string | null) => cities.find((c) => c.id === id)?.name ?? "—";
+  const cityName = (id: string | null) => {
+    const city = cities.find((c) => c.id === id);
+    return city ? displayField(city, "name") : "—";
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -169,7 +173,7 @@ export function GalleryPage() {
           <SelectContent>
             <SelectItem value="all">All (sitewide + cities)</SelectItem>
             {cities.map((city) => (
-              <SelectItem key={city.id} value={city.id}>{city.name}</SelectItem>
+              <SelectItem key={city.id} value={city.id}>{displayField(city, "name")}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -226,7 +230,7 @@ export function GalleryPage() {
                   <SelectItem value="none">Sitewide (no city)</SelectItem>
                   {cities.map((city) => (
                     <SelectItem key={city.id} value={city.id}>
-                      {city.name}
+                      {displayField(city, "name")}
                     </SelectItem>
                   ))}
                 </SelectContent>

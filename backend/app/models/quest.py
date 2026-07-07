@@ -25,8 +25,12 @@ class Quest(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         index=True,
         nullable=False,
     )
-    title: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
+    title_kk: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    title_ru: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    title_en: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    description_kk: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description_ru: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description_en: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficulty: Mapped[str] = mapped_column(String(50), default="medium", nullable=False)
     points: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
     xp_reward: Mapped[int] = mapped_column(Integer, default=100, nullable=False)

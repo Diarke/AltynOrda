@@ -38,7 +38,10 @@ class QuizService:
             if answer.question_index >= total:
                 raise ValidationException(f"Invalid question index: {answer.question_index}")
             question = questions[answer.question_index]
-            correct_answer = question.get("correct_answer", "").strip().lower()
+            correct_answer = (
+                question.get(f"correct_answer_{data.language.value}")
+                or question.get("correct_answer_kk", "")
+            ).strip().lower()
             if answer.selected_answer.strip().lower() == correct_answer:
                 correct += 1
 

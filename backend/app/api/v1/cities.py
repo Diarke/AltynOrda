@@ -23,8 +23,9 @@ async def list_cities(
     service: Annotated[CityService, Depends(get_city_service)],
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    language: Language = Language.KAZAKH,
 ) -> PaginatedResponse[CitySummaryResponse]:
-    cities, meta = await service.list_cities(page=page, page_size=page_size)
+    cities, meta = await service.list_cities(page=page, page_size=page_size, language=language)
     return PaginatedResponse(data=cities, meta=meta)
 
 
@@ -36,8 +37,9 @@ async def list_cities(
 async def get_city(
     city_id: uuid.UUID,
     service: Annotated[CityService, Depends(get_city_service)],
+    language: Language = Language.KAZAKH,
 ) -> SuccessResponse[CityResponse]:
-    city = await service.get_city(city_id)
+    city = await service.get_city(city_id, language=language)
     return SuccessResponse(data=city)
 
 

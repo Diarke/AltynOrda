@@ -2,11 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   request,
   type ApiAchievement,
-  type ApiArtifact,
   type ApiCertificate,
-  type ApiCity,
   type ApiLanguage,
-  type ApiQuest,
   type ApiUser,
   type PaginatedResponse,
 } from "../../lib/api";
@@ -22,13 +19,86 @@ export interface AdminUser extends ApiUser {
 }
 
 export interface AdminQuizQuestion {
-  question: string;
-  options: string[];
-  correct_answer: string;
+  question_kk: string;
+  question_ru: string | null;
+  question_en: string | null;
+  options_kk: string[];
+  options_ru: string[] | null;
+  options_en: string[] | null;
+  correct_answer_kk: string;
+  correct_answer_ru: string | null;
+  correct_answer_en: string | null;
 }
 
-export interface AdminQuest extends ApiQuest {
+export interface AdminQuest {
+  id: string;
+  city_id: string;
+  difficulty: string;
+  points: number;
+  xp_reward: number;
+  coin_reward: number;
+  cooldown_hours: number;
+  estimated_time_minutes: number;
+  category: string;
+  status: string;
+  title_kk: string | null;
+  title_ru: string | null;
+  title_en: string | null;
+  description_kk: string | null;
+  description_ru: string | null;
+  description_en: string | null;
   quiz_questions: AdminQuizQuestion[] | null;
+  created_at: string;
+}
+
+export interface AdminCity {
+  id: string;
+  slug: string;
+  latitude: number;
+  longitude: number;
+  image_url: string | null;
+  name_kk: string | null;
+  name_ru: string | null;
+  name_en: string | null;
+  description_kk: string | null;
+  description_ru: string | null;
+  description_en: string | null;
+  historical_period_kk: string | null;
+  historical_period_ru: string | null;
+  historical_period_en: string | null;
+  population_estimate_kk: string | null;
+  population_estimate_ru: string | null;
+  population_estimate_en: string | null;
+  significance_kk: string | null;
+  significance_ru: string | null;
+  significance_en: string | null;
+  historical_facts_kk: string[] | null;
+  historical_facts_ru: string[] | null;
+  historical_facts_en: string[] | null;
+  trade_info_kk: string | null;
+  trade_info_ru: string | null;
+  trade_info_en: string | null;
+  created_at: string;
+}
+
+export interface AdminArtifact {
+  id: string;
+  city_id: string;
+  rarity: string;
+  image_url: string | null;
+  name_kk: string | null;
+  name_ru: string | null;
+  name_en: string | null;
+  description_kk: string | null;
+  description_ru: string | null;
+  description_en: string | null;
+  era_kk: string | null;
+  era_ru: string | null;
+  era_en: string | null;
+  historical_context_kk: string | null;
+  historical_context_ru: string | null;
+  historical_context_en: string | null;
+  created_at: string;
 }
 
 export interface AdminGalleryImage {
@@ -52,8 +122,12 @@ export type AchievementMetric =
 export interface AdminAchievementDefinition {
   id: string;
   key: string;
-  title: string;
-  description: string;
+  title_kk: string | null;
+  title_ru: string | null;
+  title_en: string | null;
+  description_kk: string | null;
+  description_ru: string | null;
+  description_en: string | null;
   icon_url: string | null;
   metric: AchievementMetric;
   threshold: number;
@@ -321,17 +395,17 @@ export function useDeleteAdminUser() {
 
 // ─── Cities ──────────────────────────────────────────────────────────────────
 
-export type AdminCityInput = Omit<ApiCity, "id" | "created_at">;
+export type AdminCityInput = Omit<AdminCity, "id" | "created_at">;
 
 export function useAdminCities(page = 1, pageSize = 20, q?: string) {
-  return useAdminList<ApiCity>("cities", "cities", { page, page_size: pageSize, q });
+  return useAdminList<AdminCity>("cities", "cities", { page, page_size: pageSize, q });
 }
 
 export function useCreateAdminCity() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: AdminCityInput) =>
-      request<ApiCity>("/admin/cities", { method: "POST", body: JSON.stringify(data) }),
+      request<AdminCity>("/admin/cities", { method: "POST", body: JSON.stringify(data) }),
     onSuccess: () => invalidate(queryClient, "cities"),
   });
 }
@@ -340,7 +414,7 @@ export function useUpdateAdminCity() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<AdminCityInput> }) =>
-      request<ApiCity>(`/admin/cities/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+      request<AdminCity>(`/admin/cities/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: () => invalidate(queryClient, "cities"),
   });
 }
@@ -355,14 +429,14 @@ export function useDeleteAdminCity() {
 
 // ─── Artifacts ───────────────────────────────────────────────────────────────
 
-export type AdminArtifactInput = Omit<ApiArtifact, "id" | "created_at">;
+export type AdminArtifactInput = Omit<AdminArtifact, "id" | "created_at">;
 
 export function useAdminArtifacts(
   page = 1,
   pageSize = 20,
   filters?: { q?: string; cityId?: string; rarity?: string }
 ) {
-  return useAdminList<ApiArtifact>("artifacts", "artifacts", {
+  return useAdminList<AdminArtifact>("artifacts", "artifacts", {
     page,
     page_size: pageSize,
     q: filters?.q,
@@ -375,7 +449,7 @@ export function useCreateAdminArtifact() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: AdminArtifactInput) =>
-      request<ApiArtifact>("/admin/artifacts", { method: "POST", body: JSON.stringify(data) }),
+      request<AdminArtifact>("/admin/artifacts", { method: "POST", body: JSON.stringify(data) }),
     onSuccess: () => invalidate(queryClient, "artifacts"),
   });
 }
@@ -384,7 +458,7 @@ export function useUpdateAdminArtifact() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<AdminArtifactInput> }) =>
-      request<ApiArtifact>(`/admin/artifacts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+      request<AdminArtifact>(`/admin/artifacts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: () => invalidate(queryClient, "artifacts"),
   });
 }
@@ -399,7 +473,7 @@ export function useDeleteAdminArtifact() {
 
 // ─── Quests ──────────────────────────────────────────────────────────────────
 
-export type AdminQuestInput = Omit<AdminQuest, "id" | "created_at" | "completion_status" | "cooldown_until">;
+export type AdminQuestInput = Omit<AdminQuest, "id" | "created_at">;
 
 export function useAdminQuests(
   page = 1,

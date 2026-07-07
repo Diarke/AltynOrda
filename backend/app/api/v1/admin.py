@@ -21,11 +21,13 @@ from app.schemas.admin import (
     AdminAchievementUpdateRequest,
     AdminAIUsageResponse,
     AdminArtifactCreateRequest,
+    AdminArtifactResponse,
     AdminArtifactUpdateRequest,
     AdminCertificateCreateRequest,
     AdminCertificatesAnalyticsResponse,
     AdminCertificateUpdateRequest,
     AdminCityCreateRequest,
+    AdminCityResponse,
     AdminCityUpdateRequest,
     AdminCoinEconomyResponse,
     AdminGalleryImageCreateRequest,
@@ -57,9 +59,7 @@ from app.schemas.admin import (
     AdminUserUpdateRequest,
     AdminXPStatsResponse,
 )
-from app.schemas.artifact import ArtifactResponse
 from app.schemas.certificate import CertificateResponse
-from app.schemas.city import CityResponse
 from app.schemas.common import PaginatedMeta, PaginatedResponse, SuccessResponse
 from app.schemas.progress import AchievementResponse
 from app.schemas.suggested_prompt import (
@@ -255,14 +255,14 @@ async def delete_user(
 # ─── Cities ──────────────────────────────────────────────────────────────────
 
 
-@router.get("/cities", response_model=PaginatedResponse[CityResponse], summary="List cities")
+@router.get("/cities", response_model=PaginatedResponse[AdminCityResponse], summary="List cities")
 async def list_cities(
     _admin_user: AdminUser,
     service: Annotated[AdminService, Depends(get_admin_service)],
     page: int = PageQuery,
     page_size: int = PageSizeQuery,
     q: str | None = None,
-) -> PaginatedResponse[CityResponse]:
+) -> PaginatedResponse[AdminCityResponse]:
     offset = (page - 1) * page_size
     cities = await service.list_cities(q=q, offset=offset, limit=page_size)
     total = await service.count_cities(q=q)
@@ -270,35 +270,35 @@ async def list_cities(
 
 
 @router.get(
-    "/cities/{city_id}", response_model=SuccessResponse[CityResponse], summary="Get a city by ID"
+    "/cities/{city_id}", response_model=SuccessResponse[AdminCityResponse], summary="Get a city by ID"
 )
 async def get_city(
     city_id: uuid.UUID,
     _admin_user: AdminUser,
     service: Annotated[AdminService, Depends(get_admin_service)],
-) -> SuccessResponse[CityResponse]:
+) -> SuccessResponse[AdminCityResponse]:
     return SuccessResponse(data=await service.get_city(city_id))
 
 
-@router.post("/cities", response_model=SuccessResponse[CityResponse], summary="Create a city")
+@router.post("/cities", response_model=SuccessResponse[AdminCityResponse], summary="Create a city")
 async def create_city(
     data: AdminCityCreateRequest,
     _admin_user: AdminUser,
     service: Annotated[AdminService, Depends(get_admin_service)],
-) -> SuccessResponse[CityResponse]:
+) -> SuccessResponse[AdminCityResponse]:
     city = await service.create_city(data)
     return SuccessResponse(message="City created", data=city)
 
 
 @router.patch(
-    "/cities/{city_id}", response_model=SuccessResponse[CityResponse], summary="Update a city"
+    "/cities/{city_id}", response_model=SuccessResponse[AdminCityResponse], summary="Update a city"
 )
 async def update_city(
     city_id: uuid.UUID,
     data: AdminCityUpdateRequest,
     _admin_user: AdminUser,
     service: Annotated[AdminService, Depends(get_admin_service)],
-) -> SuccessResponse[CityResponse]:
+) -> SuccessResponse[AdminCityResponse]:
     city = await service.update_city(city_id, data)
     return SuccessResponse(message="City updated", data=city)
 
@@ -317,7 +317,7 @@ async def delete_city(
 
 
 @router.get(
-    "/artifacts", response_model=PaginatedResponse[ArtifactResponse], summary="List artifacts"
+    "/artifacts", response_model=PaginatedResponse[AdminArtifactResponse], summary="List artifacts"
 )
 async def list_artifacts(
     _admin_user: AdminUser,
@@ -327,7 +327,7 @@ async def list_artifacts(
     q: str | None = None,
     city_id: uuid.UUID | None = None,
     rarity: str | None = None,
-) -> PaginatedResponse[ArtifactResponse]:
+) -> PaginatedResponse[AdminArtifactResponse]:
     offset = (page - 1) * page_size
     artifacts = await service.list_artifacts(
         q=q, city_id=city_id, rarity=rarity, offset=offset, limit=page_size
@@ -338,32 +338,32 @@ async def list_artifacts(
 
 @router.get(
     "/artifacts/{artifact_id}",
-    response_model=SuccessResponse[ArtifactResponse],
+    response_model=SuccessResponse[AdminArtifactResponse],
     summary="Get an artifact by ID",
 )
 async def get_artifact(
     artifact_id: uuid.UUID,
     _admin_user: AdminUser,
     service: Annotated[AdminService, Depends(get_admin_service)],
-) -> SuccessResponse[ArtifactResponse]:
+) -> SuccessResponse[AdminArtifactResponse]:
     return SuccessResponse(data=await service.get_artifact(artifact_id))
 
 
 @router.post(
-    "/artifacts", response_model=SuccessResponse[ArtifactResponse], summary="Create an artifact"
+    "/artifacts", response_model=SuccessResponse[AdminArtifactResponse], summary="Create an artifact"
 )
 async def create_artifact(
     data: AdminArtifactCreateRequest,
     _admin_user: AdminUser,
     service: Annotated[AdminService, Depends(get_admin_service)],
-) -> SuccessResponse[ArtifactResponse]:
+) -> SuccessResponse[AdminArtifactResponse]:
     artifact = await service.create_artifact(data)
     return SuccessResponse(message="Artifact created", data=artifact)
 
 
 @router.patch(
     "/artifacts/{artifact_id}",
-    response_model=SuccessResponse[ArtifactResponse],
+    response_model=SuccessResponse[AdminArtifactResponse],
     summary="Update an artifact",
 )
 async def update_artifact(
@@ -371,7 +371,7 @@ async def update_artifact(
     data: AdminArtifactUpdateRequest,
     _admin_user: AdminUser,
     service: Annotated[AdminService, Depends(get_admin_service)],
-) -> SuccessResponse[ArtifactResponse]:
+) -> SuccessResponse[AdminArtifactResponse]:
     artifact = await service.update_artifact(artifact_id, data)
     return SuccessResponse(message="Artifact updated", data=artifact)
 

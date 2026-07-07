@@ -7,11 +7,14 @@ same transaction as the event that caused it.
 """
 
 import uuid
+from typing import Callable
 
 from app.core.unit_of_work import UnitOfWork
-from app.enums import NotificationType
+from app.enums import Language, NotificationType
 from app.exceptions import NotFoundException
+from app.i18n.messages import render_notification
 from app.models.notification import Notification
+from app.models.user import User
 from app.schemas.notification import NotificationResponse
 
 
@@ -19,13 +22,14 @@ async def notify(
     uow: UnitOfWork,
     user_id: uuid.UUID,
     notification_type: NotificationType,
-    title: str,
-    message: str,
+    language: Language,
     *,
     entity_type: str | None = None,
     entity_id: uuid.UUID | None = None,
+    **template_kwargs: object,
 ) -> Notification:
-    """Create a notification. Caller is responsible for committing."""
+    """Create a notification, rendered in `language`. Caller is responsible for committing."""
+    title, message = render_notification(notification_type, language, **template_kwargs)
     notification = Notification(
         user_id=user_id,
         type=notification_type.value,
@@ -40,23 +44,25 @@ async def notify(
 async def notify_all_active_users(
     uow: UnitOfWork,
     notification_type: NotificationType,
-    title: str,
-    message: str,
+    build_kwargs: Callable[[User], dict[str, object]] | None = None,
     *,
     entity_type: str | None = None,
     entity_id: uuid.UUID | None = None,
 ) -> int:
-    """Broadcast a notification to every active user (e.g. a new quest going live)."""
+    """Broadcast a notification to every active user (e.g. a new quest going live),
+    each rendered in that user's own language. `build_kwargs` lets the caller derive
+    per-recipient template values (e.g. a quest title resolved to the recipient's language)."""
     users = await uow.users.search(is_active=True, limit=10_000)
     for user in users:
+        kwargs = build_kwargs(user) if build_kwargs else {}
         await notify(
             uow,
             user.id,
             notification_type,
-            title,
-            message,
+            user.language,
             entity_type=entity_type,
             entity_id=entity_id,
+            **kwargs,
         )
     return len(users)
 
