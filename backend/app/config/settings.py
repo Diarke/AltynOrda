@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     jwt_refresh_token_expire_days: int = 7
 
     # CORS
-    cors_origins: list[str] = Field(default=["http://localhost:5173"])
+    cors_origins: Annotated[list[str], Field(alias="CORS_ORIGINS")]
 
     # Groq AI
     groq_api_key: str = ""
