@@ -270,6 +270,21 @@ function countCompletedByType(records: ApiProgressSummary["records"] | undefined
   return (records || []).filter((r) => r.entity_type === entityType && r.status === "completed").length;
 }
 
+// Overall journey completion: 40% weighted toward cities unlocked, 60% toward quests
+// completed. Missing/zero totals (data not loaded yet, or an empty catalog) return 0
+// rather than dividing by zero or showing a misleadingly full bar.
+function calculateJourneyProgress({
+  unlockedCities, totalCities, completedQuests, totalQuests,
+}: {
+  unlockedCities: number; totalCities: number; completedQuests: number; totalQuests: number;
+}): number {
+  if (!totalCities || !totalQuests) return 0;
+  const cityScore = (unlockedCities / totalCities) * 40;
+  const questScore = (completedQuests / totalQuests) * 60;
+  const clamped = Math.min(100, Math.max(0, cityScore + questScore));
+  return Math.round(clamped);
+}
+
 // ─── Data ─────────────────────────────────────────────────────────────────────
 function getCharacterData(t: TFunction) {
   return {
@@ -1632,9 +1647,25 @@ function Dashboard({ character, onSelectCity, onNav }: {
   const records = summary?.records;
   const totalQuests = questsData?.meta.total ?? 0;
   const questsCompleted = countCompletedByType(records, "quest");
-  const citiesVisited = countCompletedByType(records, "city");
   const artifactsCollected = countCompletedByType(records, "artifact");
-  const journeyPercent = Math.round(summary?.completion_percent ?? 0);
+
+  // A city counts as "unlocked" once the player has completed at least one quest
+  // there — there's no separate city-visit tracking, so this is derived from real
+  // quest-completion data (the same source the map's route coloring below uses).
+  const completedCitySlugs = new Set(
+    (questsData?.data || [])
+      .filter(q => q.completion_status === "completed")
+      .map(q => cities.find(c => c.id === q.city_id)?.slug)
+      .filter((slug): slug is string => Boolean(slug))
+  );
+  const citiesVisited = completedCitySlugs.size;
+
+  const journeyPercent = calculateJourneyProgress({
+    unlockedCities: citiesVisited,
+    totalCities: cities.length,
+    completedQuests: questsCompleted,
+    totalQuests,
+  });
   const questsPercent = totalQuests > 0 ? Math.round((questsCompleted / totalQuests) * 100) : 0;
 
   // Prefer a quest from the active city once one is selected — same "single source
@@ -1650,16 +1681,6 @@ function Dashboard({ character, onSelectCity, onNav }: {
 
   const achievements = (achievementsQuery.data || []).slice(0, 3);
   const notifications = (notificationsQuery.data?.data || []).slice(0, 3);
-
-  // A city counts as "completed" for the map's route coloring once the player has
-  // finished at least one quest there — the same real progress data already
-  // powering questsCompleted above (no separate "city visited" tracking exists yet).
-  const completedCitySlugs = new Set(
-    (questsData?.data || [])
-      .filter(q => q.completion_status === "completed")
-      .map(q => cities.find(c => c.id === q.city_id)?.slug)
-      .filter((slug): slug is string => Boolean(slug))
-  );
 
   // Per-city completion %, feeding the map tooltip's status/percent lines —
   // `Map` the class is shadowed by the lucide-react icon import in this file.
@@ -2764,7 +2785,12 @@ function Certificate({ character, onBack }: { character: CharType; onBack: () =>
 
   const records = summaryQuery.data?.records;
   const citiesTotal = citiesData?.data.length ?? 0;
-  const citiesVisited = countCompletedByType(records, "city");
+  // A city counts as "unlocked" once the player has completed at least one quest
+  // there — there's no separate city-visit tracking (same logic the dashboard's
+  // journey-progress calculation and map route coloring both use).
+  const citiesVisited = new Set(
+    (questsData?.data || []).filter(q => q.completion_status === "completed").map(q => q.city_id)
+  ).size;
   const artifactsCollected = countCompletedByType(records, "artifact");
   const questsCompleted = countCompletedByType(records, "quest");
   const totalQuests = questsData?.meta.total ?? 0;
@@ -2947,7 +2973,12 @@ function Passport({ onBack, onLogout }: { onBack: () => void; onLogout: () => vo
   const achievements = achievementsQuery.data || [];
   const certificates = certificatesQuery.data || [];
 
-  const citiesVisited = countCompletedByType(records, "city");
+  // A city counts as "unlocked" once the player has completed at least one quest
+  // there — there's no separate city-visit tracking (same logic the dashboard's
+  // journey-progress calculation and map route coloring both use).
+  const citiesVisited = new Set(
+    questsList.filter(q => q.completion_status === "completed").map(q => q.city_id)
+  ).size;
   const artifactsCollected = countCompletedByType(records, "artifact");
   const questsCompleted = countCompletedByType(records, "quest");
 
