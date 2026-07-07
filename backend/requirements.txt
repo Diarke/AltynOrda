@@ -44,7 +44,6 @@ MarkupSafe==3.0.3
 minio==7.2.20
 nodeenv==1.10.0
 numpy==2.5.1
--e git+https://github.com/Diarke/AltynOrda.git@cb4a838dfd3afc6db1c636d5ba0d453391ade127#egg=orda_backend&subdirectory=backend
 orjson==3.11.9
 ormsgpack==1.12.2
 packaging==26.2
