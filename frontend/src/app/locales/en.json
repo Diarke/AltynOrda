@@ -263,6 +263,7 @@
     "viewCityDetails": "View Details →",
     "examProgress": "EXAM PROGRESS",
     "currentMission": "CURRENT MISSION",
+    "currentPath": "Current Path: {{role}}",
     "openExamination": "Open City Examination",
     "journeyLog": "JOURNEY LOG",
     "openFullOracle": "Open full conversation →",
@@ -390,6 +391,7 @@
   "quests": {
     "title": "Quest Log",
     "subtitle": "Choose your path wisely — history remembers every decision",
+    "subtitleCity": "Quests in {{city}} — choose your path wisely",
     "unableToLoad": "Unable to load quests right now.",
     "activeQuest": "ACTIVE QUEST",
     "selectQuest": "Select a quest",
@@ -401,7 +403,60 @@
     "completeQuest": "Complete Quest",
     "completing": "Completing…",
     "noQuestsAvailable": "No quests available right now — check back soon.",
-    "cityUnlocked": "You've unlocked a new city: {{city}}!"
+    "cityUnlocked": "You've unlocked a new city: {{city}}!",
+    "filters": {
+      "all": "All",
+      "available": "Available",
+      "in_progress": "In Progress",
+      "completed": "Completed",
+      "thisCity": "This City",
+      "allCities": "All Cities",
+      "allTypes": "All Types",
+      "allDifficulties": "All Difficulties"
+    },
+    "sort": {
+      "recommended": "Recommended",
+      "closest": "Closest to Completion",
+      "reward": "Highest Reward",
+      "newest": "Newest Unlocked"
+    },
+    "state": {
+      "completed": "Completed",
+      "inProgress": "In Progress",
+      "locked": "Locked"
+    }
+  },
+  "games": {
+    "claimReward": "Claim Reward",
+    "tryAgain": "Try Again",
+    "khansCourt": {
+      "title": "Khan's Court",
+      "statementCount": "Statement {{current}} of {{total}}",
+      "true": "True",
+      "false": "False",
+      "correct": "Correct!",
+      "incorrect": "Not quite.",
+      "won": "The Khan is Satisfied",
+      "wonSubtitle": "{{correct}} of {{total}} statements answered correctly.",
+      "lost": "The Khan is Unconvinced",
+      "lostSubtitle": "{{correct}} of {{total}} correct — you needed at least 3."
+    },
+    "chronograph": {
+      "title": "Chronograph",
+      "instructions": "Drag the events into the correct chronological order.",
+      "checkOrder": "Check Order",
+      "notQuite": "Not quite in order yet — keep adjusting.",
+      "won": "Chronology Restored",
+      "moveUp": "Move up",
+      "moveDown": "Move down"
+    },
+    "caravanBuilder": {
+      "title": "Caravan Builder",
+      "instructions": "Select the goods historically traded through this city.",
+      "loadCaravan": "Load the Caravan",
+      "notQuite": "Not quite the right cargo — adjust your selection.",
+      "won": "Caravan Loaded"
+    }
   },
   "certificate": {
     "loading": "Loading your certificate…",

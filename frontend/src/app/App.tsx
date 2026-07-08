@@ -20,7 +20,10 @@ import {
   useQuests,
   useSuggestedPrompts,
   type ApiArtifact,
+  type ApiCaravanBuilderData,
+  type ApiChronographData,
   type ApiCity,
+  type ApiKhansCourtData,
   type ApiLanguage,
   type ApiNotification,
   type ApiProgressSummary,
@@ -32,7 +35,8 @@ import {
   Send, X, Menu, ChevronDown, Shield, Crown, BookOpen, Clock,
   MapPin, Download, Share2, Check, ChevronLeft, Star, Eye, Mountain,
   Volume2, TrendingUp, Wind, Zap, Feather, LogOut, Camera, Bell, Coins,
-  Users, Copy, Trophy, Plus
+  Users, Copy, Trophy, Plus, Heart, GripVertical, ArrowUp, ArrowDown, Gavel, History, RotateCcw,
+  Lock, ArrowUpDown
 } from "lucide-react";
 import { GLOBAL_CSS } from "./styles/globalCss";
 import { GlobalSearchTrigger } from "./components/GlobalSearch";
@@ -2022,6 +2026,29 @@ function Dashboard({ character, onSelectCity, onNav }: {
             </div>
           </div>
 
+          {/* Current Path — the player's permanently-visible, backend-persisted
+              progression route (`user.journey`), so it reads correctly even
+              right after a refresh instead of silently defaulting. */}
+          <div className="rounded-[16px] p-4" style={{ background: `linear-gradient(135deg, ${char.color}14, rgba(241,233,210,0.65))`, border: `1.5px solid ${char.color}50` }}>
+            <span className="badge-gold text-[9px] inline-block mb-2">{t("dashboard.currentPath", { role: char.name })}</span>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: `${char.color}22`, border: `1px solid ${char.color}50` }}>
+                <char.icon size={18} color={char.color} />
+              </div>
+              <div className="min-w-0">
+                <div className="orda-cinzel text-sm font-bold text-[#2E2013] truncate">{char.name}</div>
+                <div className="orda-inter text-[10px] text-[#5C4E38] truncate">{char.title}</div>
+              </div>
+            </div>
+            <p className="orda-inter text-[11px] text-[#5C4E38] leading-relaxed line-clamp-2">{char.description}</p>
+            {activeQuest && (
+              <div className="flex items-center gap-1.5 mt-2 pt-2" style={{ borderTop: `1px solid ${char.color}25` }}>
+                <Zap size={11} color={char.color} className="flex-shrink-0" />
+                <span className="orda-inter text-[10px] text-[#2E2013] truncate">{activeQuest.title}</span>
+              </div>
+            )}
+          </div>
+
           {/* Sidebar tab switcher — mirrors the bottom nav's Timeline tab */}
           <div className="flex rounded-full p-1" style={{ background: "rgba(59,42,19,0.06)" }}>
             {(["city", "timeline"] as const).map((tab) => (
@@ -2856,42 +2883,397 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
   );
 }
 
+// ─── QUEST MINI-GAMES ─────────────────────────────────────────────────────────
+// Per-`game_type` icon so gameified quests visibly stand out in the quest list
+// instead of reading as identical generic cards.
+const GAME_TYPE_ICON: Record<string, typeof Zap> = {
+  khans_court: Gavel,
+  chronograph: History,
+  caravan_builder: ShoppingBag,
+};
+
+function KhansCourtGame({ data, onWin }: { data: ApiKhansCourtData; onWin: () => void }) {
+  const { t } = useTranslation();
+  const [index, setIndex] = useState(0);
+  const [hearts, setHearts] = useState(3);
+  const [correctCount, setCorrectCount] = useState(0);
+  const [feedback, setFeedback] = useState<"correct" | "wrong" | null>(null);
+  const [phase, setPhase] = useState<"playing" | "won" | "lost">("playing");
+
+  const reset = () => {
+    setIndex(0); setHearts(3); setCorrectCount(0); setFeedback(null); setPhase("playing");
+  };
+
+  const answer = (choice: boolean) => {
+    if (feedback) return;
+    const statement = data.statements[index];
+    const isCorrect = choice === statement.answer;
+    const nextHearts = isCorrect ? hearts : hearts - 1;
+    const nextCorrect = isCorrect ? correctCount + 1 : correctCount;
+    setFeedback(isCorrect ? "correct" : "wrong");
+    if (!isCorrect) setHearts(nextHearts);
+    else setCorrectCount(nextCorrect);
+
+    setTimeout(() => {
+      const isLast = index === data.statements.length - 1;
+      if (nextHearts <= 0) {
+        setPhase("lost");
+      } else if (isLast) {
+        setPhase(nextCorrect >= 3 ? "won" : "lost");
+      } else {
+        setIndex((i) => i + 1);
+        setFeedback(null);
+      }
+    }, 900);
+  };
+
+  if (phase === "won") {
+    return (
+      <div className="animate-scale-in rounded-[16px] p-6 text-center" style={{ background: "rgba(124,139,90,0.06)", border: "1px solid rgba(124,139,90,0.2)" }}>
+        <Gavel size={26} color="#7C8B5A" className="mx-auto mb-3" />
+        <div className="text-[#7C8B5A] text-sm orda-cinzel tracking-widest mb-2">{t("games.khansCourt.won")}</div>
+        <p className="orda-inter text-xs text-[#5C4E38] mb-4">{t("games.khansCourt.wonSubtitle", { correct: correctCount, total: data.statements.length })}</p>
+        <button onClick={onWin} className="btn-primary text-sm px-8 py-2.5">{t("games.claimReward")}</button>
+      </div>
+    );
+  }
+  if (phase === "lost") {
+    return (
+      <div className="animate-scale-in rounded-[16px] p-6 text-center" style={{ background: "rgba(162,62,46,0.05)", border: "1px solid rgba(162,62,46,0.18)" }}>
+        <Heart size={22} color="#A23E2E" className="mx-auto mb-3" />
+        <div className="text-[#A23E2E] text-sm orda-cinzel tracking-widest mb-2">{t("games.khansCourt.lost")}</div>
+        <p className="orda-inter text-xs text-[#5C4E38] mb-4">{t("games.khansCourt.lostSubtitle", { correct: correctCount, total: data.statements.length })}</p>
+        <button onClick={reset} className="btn-ghost text-sm px-8 py-2.5 inline-flex items-center gap-2"><RotateCcw size={14} /> {t("games.tryAgain")}</button>
+      </div>
+    );
+  }
+
+  const statement = data.statements[index];
+  return (
+    <div className="rounded-[16px] p-6" style={{ background: "#2E2013" }}>
+      <div className="flex items-center justify-between mb-5">
+        <span className="orda-cinzel text-[10px] tracking-[0.2em]" style={{ color: "#D8C79C" }}>{t("games.khansCourt.title")}</span>
+        <div className="flex items-center gap-1">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Heart key={i} size={14} color={i < hearts ? "#A23E2E" : "#5C4E38"} fill={i < hearts ? "#A23E2E" : "none"} />
+          ))}
+        </div>
+      </div>
+      <div className="text-center mb-2" style={{ color: "#9C8F72" }}>
+        <span className="orda-inter text-[10px]">{t("games.khansCourt.statementCount", { current: index + 1, total: data.statements.length })}</span>
+      </div>
+      <p className="orda-cormorant text-xl italic text-center leading-relaxed mb-6 px-2" style={{ color: "#EADFC0" }}>
+        "{statement.text}"
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <button onClick={() => answer(true)} disabled={Boolean(feedback)}
+          className="py-3.5 rounded-xl orda-cinzel text-sm font-semibold tracking-widest transition-all disabled:cursor-default"
+          style={{
+            background: feedback ? (statement.answer === true ? "rgba(124,139,90,0.25)" : "rgba(234,223,192,0.08)") : "rgba(124,139,90,0.15)",
+            border: `1px solid ${feedback && statement.answer === true ? "#7C8B5A" : "rgba(124,139,90,0.3)"}`,
+            color: "#A8C08A",
+          }}>
+          {t("games.khansCourt.true")}
+        </button>
+        <button onClick={() => answer(false)} disabled={Boolean(feedback)}
+          className="py-3.5 rounded-xl orda-cinzel text-sm font-semibold tracking-widest transition-all disabled:cursor-default"
+          style={{
+            background: feedback ? (statement.answer === false ? "rgba(124,139,90,0.25)" : "rgba(234,223,192,0.08)") : "rgba(162,62,46,0.12)",
+            border: `1px solid ${feedback && statement.answer === false ? "#7C8B5A" : "rgba(162,62,46,0.3)"}`,
+            color: "#D69B8C",
+          }}>
+          {t("games.khansCourt.false")}
+        </button>
+      </div>
+      {feedback && (
+        <p className="text-center orda-inter text-xs mt-4" style={{ color: feedback === "correct" ? "#A8C08A" : "#D69B8C" }}>
+          {feedback === "correct" ? t("games.khansCourt.correct") : t("games.khansCourt.incorrect")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ChronographGame({ data, onWin }: { data: ApiChronographData; onWin: () => void }) {
+  const { t } = useTranslation();
+  const shuffle = () => {
+    const indices = data.events.map((_, i) => i);
+    for (let i = indices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+    // Re-shuffle once more if it happens to already be in the correct order.
+    if (indices.every((eventIdx, pos) => data.events[eventIdx].order === pos + 1)) {
+      return [...indices].reverse();
+    }
+    return indices;
+  };
+  const [order, setOrder] = useState<number[]>(shuffle);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [won, setWon] = useState(false);
+
+  const isCorrectPosition = (pos: number) => data.events[order[pos]].order === pos + 1;
+  const allCorrect = order.every((_, pos) => isCorrectPosition(pos));
+
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= order.length) return;
+    setChecked(false);
+    setOrder((current) => {
+      const next = [...current];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next;
+    });
+  };
+
+  const handleCheck = () => {
+    setChecked(true);
+    if (allCorrect) setWon(true);
+  };
+
+  if (won) {
+    return (
+      <div className="animate-scale-in rounded-[16px] p-6 text-center" style={{ background: "rgba(124,139,90,0.06)", border: "1px solid rgba(124,139,90,0.2)" }}>
+        <History size={26} color="#7C8B5A" className="mx-auto mb-3" />
+        <div className="text-[#7C8B5A] text-sm orda-cinzel tracking-widest mb-2">{t("games.chronograph.won")}</div>
+        <button onClick={onWin} className="btn-primary text-sm px-8 py-2.5">{t("games.claimReward")}</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[16px] p-6" style={{ background: "rgba(241,233,210,0.6)", border: "1px solid rgba(59,42,19,0.14)" }}>
+      <div className="flex items-center gap-2 mb-1">
+        <History size={14} color="#B8892B" />
+        <span className="orda-cinzel text-[10px] tracking-[0.2em] text-[#5C4E38]">{t("games.chronograph.title")}</span>
+      </div>
+      <p className="orda-inter text-xs text-[#5C4E38] mb-4">{t("games.chronograph.instructions")}</p>
+
+      <div className="space-y-2 mb-4">
+        {order.map((eventIdx, pos) => {
+          const event = data.events[eventIdx];
+          const showResult = checked;
+          const correct = isCorrectPosition(pos);
+          return (
+            <div key={eventIdx}
+              draggable
+              onDragStart={() => setDragIndex(pos)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => { if (dragIndex !== null && dragIndex !== pos) move(dragIndex, pos); setDragIndex(null); }}
+              onDragEnd={() => setDragIndex(null)}
+              className="flex items-center gap-3 p-3 rounded-[12px] cursor-move transition-colors"
+              style={{
+                background: showResult ? (correct ? "rgba(124,139,90,0.1)" : "rgba(162,62,46,0.08)") : "rgba(243,233,210,0.9)",
+                border: `1px solid ${showResult ? (correct ? "rgba(124,139,90,0.3)" : "rgba(162,62,46,0.25)") : "rgba(59,42,19,0.12)"}`,
+                opacity: dragIndex === pos ? 0.4 : 1,
+              }}>
+              <GripVertical size={14} color="#9C8F72" className="flex-shrink-0" />
+              <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] orda-cinzel font-bold flex-shrink-0"
+                style={{ background: "rgba(184,137,43,0.15)", color: "#B8892B" }}>{pos + 1}</span>
+              <span className="orda-inter text-xs text-[#2E2013] flex-1">{event.text}</span>
+              <div className="flex flex-col gap-0.5 flex-shrink-0">
+                <button onClick={() => move(pos, pos - 1)} disabled={pos === 0} aria-label={t("games.chronograph.moveUp")}
+                  className="w-5 h-5 rounded flex items-center justify-center hover:bg-[rgba(59,42,19,0.06)] disabled:opacity-20 transition-colors">
+                  <ArrowUp size={11} color="#5C4E38" />
+                </button>
+                <button onClick={() => move(pos, pos + 1)} disabled={pos === order.length - 1} aria-label={t("games.chronograph.moveDown")}
+                  className="w-5 h-5 rounded flex items-center justify-center hover:bg-[rgba(59,42,19,0.06)] disabled:opacity-20 transition-colors">
+                  <ArrowDown size={11} color="#5C4E38" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {checked && !allCorrect && (
+        <p className="text-xs orda-inter text-center mb-3" style={{ color: "#A23E2E" }}>{t("games.chronograph.notQuite")}</p>
+      )}
+      <button onClick={handleCheck} className="btn-primary w-full text-sm py-3">{t("games.chronograph.checkOrder")}</button>
+    </div>
+  );
+}
+
+function CaravanBuilderGame({ data, onWin }: { data: ApiCaravanBuilderData; onWin: () => void }) {
+  const { t } = useTranslation();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [checked, setChecked] = useState(false);
+  const [won, setWon] = useState(false);
+
+  const toggle = (key: string) => {
+    if (checked) setChecked(false);
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const correctKeys = new Set(data.goods.filter((g) => g.correct).map((g) => g.key));
+  const isExactMatch = selected.size === correctKeys.size && [...selected].every((k) => correctKeys.has(k));
+
+  const handleLoad = () => {
+    setChecked(true);
+    if (isExactMatch) setWon(true);
+  };
+
+  if (won) {
+    return (
+      <div className="animate-scale-in rounded-[16px] p-6 text-center" style={{ background: "rgba(124,139,90,0.06)", border: "1px solid rgba(124,139,90,0.2)" }}>
+        <ShoppingBag size={26} color="#7C8B5A" className="mx-auto mb-3" />
+        <div className="text-[#7C8B5A] text-sm orda-cinzel tracking-widest mb-2">{t("games.caravanBuilder.won")}</div>
+        <button onClick={onWin} className="btn-primary text-sm px-8 py-2.5">{t("games.claimReward")}</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[16px] p-6" style={{ background: "rgba(241,233,210,0.6)", border: "1px solid rgba(59,42,19,0.14)" }}>
+      <div className="flex items-center gap-2 mb-1">
+        <ShoppingBag size={14} color="#B8892B" />
+        <span className="orda-cinzel text-[10px] tracking-[0.2em] text-[#5C4E38]">{t("games.caravanBuilder.title")}</span>
+      </div>
+      <p className="orda-inter text-xs text-[#5C4E38] mb-4">{t("games.caravanBuilder.instructions")}</p>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
+        {data.goods.map((good) => {
+          const isSelected = selected.has(good.key);
+          const showResult = checked;
+          const isRight = good.correct === isSelected;
+          return (
+            <button key={good.key} onClick={() => toggle(good.key)}
+              className="p-3 rounded-[12px] text-center transition-all orda-cinzel text-xs font-semibold"
+              style={{
+                background: showResult
+                  ? (isRight ? "rgba(124,139,90,0.12)" : "rgba(162,62,46,0.1)")
+                  : isSelected ? "rgba(184,137,43,0.15)" : "rgba(243,233,210,0.9)",
+                border: `1.5px solid ${showResult ? (isRight ? "#7C8B5A" : "#A23E2E") : isSelected ? "#B8892B" : "rgba(59,42,19,0.12)"}`,
+                color: isSelected || showResult ? "#2E2013" : "#5C4E38",
+              }}>
+              {good.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {checked && !isExactMatch && (
+        <p className="text-xs orda-inter text-center mb-3" style={{ color: "#A23E2E" }}>{t("games.caravanBuilder.notQuite")}</p>
+      )}
+      <button onClick={handleLoad} disabled={selected.size === 0} className="btn-primary w-full text-sm py-3 disabled:opacity-50">
+        {t("games.caravanBuilder.loadCaravan")}
+      </button>
+    </div>
+  );
+}
+
 // ─── QUEST VIEW ───────────────────────────────────────────────────────────────
+type QuestUiState = "locked" | "available" | "in_progress" | "completed";
+const QUEST_STATE_SORT_WEIGHT: Record<QuestUiState, number> = { in_progress: 0, available: 1, completed: 2, locked: 3 };
+type QuestStatusFilter = "all" | "available" | "in_progress" | "completed";
+type QuestSortMode = "recommended" | "closest" | "reward" | "newest";
+
 function QuestView({ onBack }: { onBack: () => void }) {
   const { t } = useTranslation();
   const location = useLocation();
   const rrNavigate = useNavigate();
+  const { activeCityId, setActiveCityId } = useActiveCity();
   const { data: citiesData } = useCities();
-  const { data: questsData, isLoading, error } = useQuests();
+  // Quest counts are small (≈42 across all cities) — fetch once, then scope/filter/sort
+  // client-side against activeCityId so switching cities is an instant re-filter, not a refetch.
+  const { data: questsData, isLoading, error } = useQuests(1, 100);
   const { completeQuestMutation } = useProgress();
-  const [activeQuest, setActiveQuest] = useState<(ApiQuest & { cityName: string }) | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [completedQuestId, setCompletedQuestId] = useState<string | null>(null);
-  const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
-  const questItems = (questsData?.data || []).map((quest) => ({ ...quest, cityName: cities.find((city) => city.id === quest.city_id)?.name || t("common.unknown") }));
-  const activeQuestUi = activeQuest ? mapApiQuest(activeQuest, activeQuest.cityName) : null;
+  const [scopeAllCities, setScopeAllCities] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<QuestStatusFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [difficultyFilter, setDifficultyFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<QuestSortMode>("recommended");
 
-  // Deep-link from global search: land here already scoped to the result the user picked.
+  const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
+  // `Map` the class is shadowed in this file by the `Map` icon imported from
+  // lucide-react above — `globalThis.Map` reaches past that shadowing.
+  const cityById = new globalThis.Map(cities.map((c) => [c.id, c]));
+  const activeCity = activeCityId ? cityById.get(activeCityId) : undefined;
+
+  const getQuestState = (quest: ApiQuest): QuestUiState => {
+    const city = cityById.get(quest.city_id);
+    if (city?.isUnlocked === false) return "locked";
+    if (quest.completion_status === "completed") return "completed";
+    if (quest.completion_status === "in_progress") return "in_progress";
+    return "available";
+  };
+
+  const allQuestItems = (questsData?.data || []).map((quest) => ({
+    ...quest,
+    cityName: cityById.get(quest.city_id)?.name || t("common.unknown"),
+    state: getQuestState(quest),
+  }));
+
+  const categories = Array.from(new Set(allQuestItems.map((q) => q.category).filter(Boolean)));
+  const difficulties = Array.from(new Set(allQuestItems.map((q) => q.difficulty).filter(Boolean)));
+
+  let questItems = allQuestItems;
+  if (!scopeAllCities && activeCityId) questItems = questItems.filter((q) => q.city_id === activeCityId);
+  if (statusFilter !== "all") questItems = questItems.filter((q) => q.state === statusFilter);
+  if (typeFilter !== "all") questItems = questItems.filter((q) => q.category === typeFilter);
+  if (difficultyFilter !== "all") questItems = questItems.filter((q) => q.difficulty === difficultyFilter);
+
+  questItems = [...questItems].sort((a, b) => {
+    switch (sortBy) {
+      case "closest":
+        return a.estimated_time_minutes - b.estimated_time_minutes;
+      case "reward":
+        return (b.xp_reward + b.coin_reward) - (a.xp_reward + a.coin_reward);
+      case "newest":
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      case "recommended":
+      default:
+        return QUEST_STATE_SORT_WEIGHT[a.state] - QUEST_STATE_SORT_WEIGHT[b.state];
+    }
+  });
+
+  const expandedQuest = questItems.find((q) => q.id === expandedId);
+
+  // Deep-link from global search: land here already scoped to the result the user picked,
+  // syncing activeCityId so the quest list (and the rest of the app) agrees on the city.
   useEffect(() => {
     const targetId = (location.state as { selectedQuestId?: string } | null)?.selectedQuestId;
-    if (!targetId || questItems.length === 0) return;
-    const match = questItems.find((q) => q.id === targetId);
-    if (match) { setActiveQuest(match); setCompletedQuestId(null); }
+    if (!targetId || allQuestItems.length === 0) return;
+    const match = allQuestItems.find((q) => q.id === targetId);
+    if (match) {
+      setExpandedId(match.id);
+      setCompletedQuestId(null);
+      setScopeAllCities(false);
+      setStatusFilter("all");
+      if (match.city_id !== activeCityId) setActiveCityId(match.city_id);
+    }
     rrNavigate(location.pathname, { replace: true, state: {} });
-  }, [location.state, questItems]);
+  }, [location.state, allQuestItems]);
 
   const isOnCooldown = Boolean(
-    activeQuest?.completion_status === "completed" &&
-    activeQuest.cooldown_until &&
-    new Date(activeQuest.cooldown_until).getTime() > Date.now()
+    expandedQuest?.completion_status === "completed" &&
+    expandedQuest.cooldown_until &&
+    new Date(expandedQuest.cooldown_until).getTime() > Date.now()
   );
-  const justCompleted = Boolean(activeQuest) && activeQuest?.id === completedQuestId && completeQuestMutation.isSuccess;
+  const justCompleted = Boolean(expandedQuest) && expandedQuest?.id === completedQuestId && completeQuestMutation.isSuccess;
 
   const handleComplete = () => {
-    if (!activeQuest) return;
-    completeQuestMutation.mutate(activeQuest.id, {
-      onSuccess: () => setCompletedQuestId(activeQuest.id),
+    if (!expandedQuest) return;
+    completeQuestMutation.mutate(expandedQuest.id, {
+      onSuccess: () => setCompletedQuestId(expandedQuest.id),
     });
   };
+
+  const handleQuestClick = (questId: string, state: QuestUiState) => {
+    if (state === "locked") return;
+    setExpandedId((prev) => (prev === questId ? null : questId));
+    setCompletedQuestId(null);
+  };
+
+  const STATUS_FILTERS: QuestStatusFilter[] = ["all", "available", "in_progress", "completed"];
+  const SORT_MODES: QuestSortMode[] = ["recommended", "closest", "reward", "newest"];
 
   return (
     <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#EDE1C4" }}>
@@ -2903,12 +3285,65 @@ function QuestView({ onBack }: { onBack: () => void }) {
           </button>
           <div>
             <h1 className="orda-cinzel text-3xl font-bold text-[#2E2013]">{t("quests.title")}</h1>
-            <p className="orda-inter text-sm text-[#5C4E38] mt-1">{t("quests.subtitle")}</p>
+            <p className="orda-inter text-sm text-[#5C4E38] mt-1">
+              {!scopeAllCities && activeCity ? t("quests.subtitleCity", { city: activeCity.name }) : t("quests.subtitle")}
+            </p>
           </div>
         </div>
 
-        {/* Quest list */}
-        <div className="grid grid-cols-1 gap-3 mb-8">
+        {/* Status + scope filters */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {STATUS_FILTERS.map((s) => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className="px-3 py-1.5 rounded-full text-xs orda-inter transition-colors"
+              style={{
+                background: statusFilter === s ? "rgba(184,137,43,0.15)" : "rgba(241,233,210,0.4)",
+                border: `1px solid ${statusFilter === s ? "rgba(184,137,43,0.35)" : "rgba(59,42,19,0.08)"}`,
+                color: statusFilter === s ? "#B8892B" : "#5C4E38",
+                fontWeight: statusFilter === s ? 600 : 400,
+              }}>
+              {t(`quests.filters.${s}`)}
+            </button>
+          ))}
+          <span className="w-px h-4 mx-1" style={{ background: "rgba(59,42,19,0.12)" }} />
+          <button onClick={() => setScopeAllCities((v) => !v)}
+            className="px-3 py-1.5 rounded-full text-xs orda-inter transition-colors flex items-center gap-1.5"
+            style={{
+              background: !scopeAllCities ? "rgba(184,137,43,0.15)" : "rgba(241,233,210,0.4)",
+              border: `1px solid ${!scopeAllCities ? "rgba(184,137,43,0.35)" : "rgba(59,42,19,0.08)"}`,
+              color: !scopeAllCities ? "#B8892B" : "#5C4E38",
+              fontWeight: !scopeAllCities ? 600 : 400,
+            }}>
+            <MapPin size={11} /> {scopeAllCities ? t("quests.filters.allCities") : t("quests.filters.thisCity")}
+          </button>
+        </div>
+
+        {/* Type / difficulty / sort */}
+        <div className="flex flex-wrap items-center gap-2 mb-8">
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
+            className="text-xs orda-inter rounded-lg"
+            style={{ appearance: "auto", width: "auto", padding: "6px 10px", background: "#F6EFDC", border: "1px solid rgba(59,42,19,0.2)", color: "#2E2013" }}>
+            <option value="all">{t("quests.filters.allTypes")}</option>
+            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={difficultyFilter} onChange={(e) => setDifficultyFilter(e.target.value)}
+            className="text-xs orda-inter rounded-lg"
+            style={{ appearance: "auto", width: "auto", padding: "6px 10px", background: "#F6EFDC", border: "1px solid rgba(59,42,19,0.2)", color: "#2E2013" }}>
+            <option value="all">{t("quests.filters.allDifficulties")}</option>
+            {difficulties.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+          <div className="flex items-center gap-1.5 ml-auto">
+            <ArrowUpDown size={12} color="#5C4E38" />
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as QuestSortMode)}
+              className="text-xs orda-inter rounded-lg"
+              style={{ appearance: "auto", width: "auto", padding: "6px 10px", background: "#F6EFDC", border: "1px solid rgba(59,42,19,0.2)", color: "#2E2013" }}>
+              {SORT_MODES.map((s) => <option key={s} value={s}>{t(`quests.sort.${s}`)}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Quest list — each item expands inline into an accordion */}
+        <div className="grid grid-cols-1 gap-3">
           {(isLoading ? Array.from({ length: 4 }) : questItems).map((q, index) => (
             isLoading || !q ? (
               <div key={`quest-skeleton-${index}`} className="rounded-[16px] p-5" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
@@ -2916,25 +3351,95 @@ function QuestView({ onBack }: { onBack: () => void }) {
                 <div className="h-2 w-20 rounded-full" style={{ background: "rgba(59,42,19,0.05)" }} />
               </div>
             ) : (
-              <div key={q.id} onClick={() => { setActiveQuest(q); setCompletedQuestId(null); }}
-                className="rounded-[16px] p-5 cursor-pointer quest-card"
+              <div key={q.id} className="rounded-[16px] overflow-hidden quest-card"
                 style={{
-                  background: activeQuest?.id === q.id ? "rgba(184,137,43,0.08)" : "rgba(241,233,210,0.4)",
-                  border: `1px solid ${activeQuest?.id === q.id ? "rgba(184,137,43,0.25)" : "rgba(59,42,19,0.06)"}`,
+                  background: q.state === "completed" ? "rgba(59,42,19,0.03)" : expandedId === q.id ? "rgba(184,137,43,0.08)" : "rgba(241,233,210,0.4)",
+                  border: `1px solid ${expandedId === q.id ? "rgba(184,137,43,0.25)" : "rgba(59,42,19,0.06)"}`,
+                  opacity: q.state === "locked" ? 0.55 : q.state === "completed" ? 0.75 : 1,
                 }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-                      style={{ background: "rgba(184,137,43,0.1)", border: "1px solid rgba(184,137,43,0.2)" }}>
-                      <Zap size={16} color="#B8892B" />
+                <div onClick={() => handleQuestClick(q.id, q.state)} className="p-5"
+                  style={{ cursor: q.state === "locked" ? "not-allowed" : "pointer" }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                        style={{ background: "rgba(184,137,43,0.1)", border: "1px solid rgba(184,137,43,0.2)" }}>
+                        {q.state === "locked" ? <Lock size={16} color="#9C8F72" /> : q.state === "completed" ? <Check size={16} color="#7C8B5A" /> : (() => {
+                          const GameIcon = (q.game_type && GAME_TYPE_ICON[q.game_type]) || Zap;
+                          return <GameIcon size={16} color="#B8892B" />;
+                        })()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold orda-cinzel text-[#2E2013] truncate">{q.title}</div>
+                        <div className="text-[11px] orda-inter text-[#5C4E38]">{q.cityName}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-sm font-semibold orda-cinzel text-[#2E2013]">{q.title}</div>
-                      <div className="text-[11px] orda-inter text-[#5C4E38]">{q.cityName}</div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {q.state === "completed" && <span className="badge-green">{t("quests.state.completed")}</span>}
+                      {q.state === "in_progress" && <span className="badge-gold">{t("quests.state.inProgress")}</span>}
+                      {q.state === "locked" && <span className="badge-gold" style={{ opacity: 0.6 }}>{t("quests.state.locked")}</span>}
+                      {q.state !== "locked" && <span className="badge-gold">+{q.xp_reward} XP</span>}
+                      <ChevronDown size={14} color="#5C4E38" style={{ transform: expandedId === q.id ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
                     </div>
                   </div>
-                  <span className="badge-gold">+{q.xp_reward} XP</span>
                 </div>
+
+                {expandedId === q.id && (
+                  <div className="px-5 pb-6 pt-1 animate-fade-in" style={{ borderTop: "1px solid rgba(59,42,19,0.08)" }}>
+                    <p className="orda-cormorant text-lg italic text-[#2E2013] leading-relaxed my-4">{q.description}</p>
+
+                    {justCompleted ? (
+                      <div className="animate-scale-in rounded-[16px] p-6 text-center"
+                        style={{ background: "rgba(124,139,90,0.06)", border: "1px solid rgba(124,139,90,0.2)" }}>
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4"
+                          style={{ background: "rgba(124,139,90,0.15)" }}>
+                          <Check size={22} color="#7C8B5A" />
+                        </div>
+                        <div className="text-[#7C8B5A] text-sm orda-cinzel tracking-widest mb-2">{t("quests.questComplete")}</div>
+                        <div className="flex items-center justify-center gap-4">
+                          <span className="badge-green">+{completeQuestMutation.data?.xp_gained ?? q.xp_reward} XP</span>
+                          <span className="badge-gold">+{completeQuestMutation.data?.coins_gained ?? 0} {t("passport.coins")}</span>
+                        </div>
+                        {completeQuestMutation.data?.unlocked_city && (
+                          <div className="mt-4 pt-4 animate-scale-in" style={{ borderTop: "1px solid rgba(184,137,43,0.15)" }}>
+                            <div className="text-lg mb-1">🔓</div>
+                            <p className="orda-inter text-xs text-[#B8892B]">
+                              {t("quests.cityUnlocked", { city: completeQuestMutation.data.unlocked_city.name })}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : isOnCooldown ? (
+                      <div className="rounded-[16px] p-6 text-center"
+                        style={{ background: "rgba(59,42,19,0.03)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                        <div className="text-[#5C4E38] text-sm orda-cinzel tracking-widest mb-2">{t("quests.onCooldown")}</div>
+                        <p className="orda-inter text-xs text-[#5C4E38]">
+                          {q.cooldown_until
+                            ? t("quests.availableAgain", { date: new Date(q.cooldown_until).toLocaleString() })
+                            : t("quests.checkBackLater")}
+                        </p>
+                      </div>
+                    ) : q.game_type === "khans_court" && q.game_data ? (
+                      <KhansCourtGame key={q.id} data={q.game_data as ApiKhansCourtData} onWin={handleComplete} />
+                    ) : q.game_type === "chronograph" && q.game_data ? (
+                      <ChronographGame key={q.id} data={q.game_data as ApiChronographData} onWin={handleComplete} />
+                    ) : q.game_type === "caravan_builder" && q.game_data ? (
+                      <CaravanBuilderGame key={q.id} data={q.game_data as ApiCaravanBuilderData} onWin={handleComplete} />
+                    ) : (
+                      <>
+                        <button onClick={handleComplete} disabled={completeQuestMutation.isPending}
+                          className="btn-primary w-full flex items-center justify-center gap-2"
+                          style={{ opacity: completeQuestMutation.isPending ? 0.7 : 1 }}>
+                          <Zap size={16} /> {completeQuestMutation.isPending ? t("quests.completing") : t("quests.completeQuest")}
+                        </button>
+                        {completeQuestMutation.isError && (
+                          <p className="mt-3 text-xs text-center orda-inter" style={{ color: "#A23E2E" }}>
+                            {(completeQuestMutation.error as Error).message}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )
           ))}
@@ -2946,63 +3451,7 @@ function QuestView({ onBack }: { onBack: () => void }) {
           )}
         </div>
 
-        {error && <div className="mb-4 text-sm text-[#5C4E38]">{t("quests.unableToLoad")}</div>}
-        {/* Active Quest */}
-        <div className="rounded-[24px] p-8" style={{ background: "rgba(241,233,210,0.8)", border: "1px solid rgba(184,137,43,0.12)" }}>
-          <div className="badge-gold mb-4">{t("quests.activeQuest")}</div>
-          <h2 className="orda-cinzel text-2xl font-bold text-[#2E2013] mb-2">{activeQuestUi?.title || t("quests.selectQuest")}</h2>
-          <div className="flex items-center gap-2 mb-6">
-            <MapPin size={12} color="#B8892B" />
-            <span className="text-sm orda-inter text-[#5C4E38]">{activeQuestUi?.city || ""}</span>
-          </div>
-          <p className="orda-cormorant text-xl italic text-[#2E2013] leading-relaxed mb-8">{activeQuestUi?.description || t("quests.chooseQuestPrompt")}</p>
-
-          {!activeQuest ? null : justCompleted ? (
-            <div className="animate-scale-in rounded-[16px] p-6 text-center"
-              style={{ background: "rgba(124,139,90,0.06)", border: "1px solid rgba(124,139,90,0.2)" }}>
-              <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4"
-                style={{ background: "rgba(124,139,90,0.15)" }}>
-                <Check size={22} color="#7C8B5A" />
-              </div>
-              <div className="text-[#7C8B5A] text-sm orda-cinzel tracking-widest mb-2">{t("quests.questComplete")}</div>
-              <div className="flex items-center justify-center gap-4">
-                <span className="badge-green">+{completeQuestMutation.data?.xp_gained ?? activeQuestUi?.xp ?? 0} XP</span>
-                <span className="badge-gold">+{completeQuestMutation.data?.coins_gained ?? 0} {t("passport.coins")}</span>
-              </div>
-              {completeQuestMutation.data?.unlocked_city && (
-                <div className="mt-4 pt-4 animate-scale-in" style={{ borderTop: "1px solid rgba(184,137,43,0.15)" }}>
-                  <div className="text-lg mb-1">🔓</div>
-                  <p className="orda-inter text-xs text-[#B8892B]">
-                    {t("quests.cityUnlocked", { city: completeQuestMutation.data.unlocked_city.name })}
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : isOnCooldown ? (
-            <div className="rounded-[16px] p-6 text-center"
-              style={{ background: "rgba(59,42,19,0.03)", border: "1px solid rgba(59,42,19,0.06)" }}>
-              <div className="text-[#5C4E38] text-sm orda-cinzel tracking-widest mb-2">{t("quests.onCooldown")}</div>
-              <p className="orda-inter text-xs text-[#5C4E38]">
-                {activeQuest.cooldown_until
-                  ? t("quests.availableAgain", { date: new Date(activeQuest.cooldown_until).toLocaleString() })
-                  : t("quests.checkBackLater")}
-              </p>
-            </div>
-          ) : (
-            <>
-              <button onClick={handleComplete} disabled={completeQuestMutation.isPending}
-                className="btn-primary w-full flex items-center justify-center gap-2"
-                style={{ opacity: completeQuestMutation.isPending ? 0.7 : 1 }}>
-                <Zap size={16} /> {completeQuestMutation.isPending ? t("quests.completing") : t("quests.completeQuest")}
-              </button>
-              {completeQuestMutation.isError && (
-                <p className="mt-3 text-xs text-center orda-inter" style={{ color: "#A23E2E" }}>
-                  {(completeQuestMutation.error as Error).message}
-                </p>
-              )}
-            </>
-          )}
-        </div>
+        {error && <div className="mt-4 text-sm text-[#5C4E38]">{t("quests.unableToLoad")}</div>}
       </div>
     </div>
   );
@@ -4055,10 +4504,15 @@ function JoinPage({ onDone, onSignIn }: { onDone: (groupId: string) => void; onS
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const { t, i18n } = useTranslation();
-  const { isAuthenticated, user } = useAuthSession();
+  const { isAuthenticated, user, updateProfileMutation } = useAuthSession();
   const location = useLocation();
   const rrNavigate = useNavigate();
-  const [character, setCharacter] = useState<CharType>("explorer");
+  // The backend-persisted choice (`user.journey`) is the source of truth once
+  // signed in — it's what makes the selected path survive a refresh. Before
+  // that (picking a path pre-signup, from the anonymous Landing flow) there's
+  // no user yet, so the pick is held here until `onAuthenticated` persists it.
+  const [pendingCharacter, setPendingCharacter] = useState<CharType | null>(null);
+  const character: CharType = (user?.journey as CharType | undefined) ?? pendingCharacter ?? "explorer";
   const { activeCityId, setActiveCityId } = useActiveCity();
 
   const view = viewForPathname(location.pathname);
@@ -4120,7 +4574,11 @@ export default function App() {
   }, [user?.language]);
 
   const handleCharSelect = (c: CharType) => {
-    setCharacter(c);
+    setPendingCharacter(c);
+    // Already signed in (e.g. revisiting character select later to switch
+    // paths) — persist immediately rather than waiting for onAuthenticated,
+    // which won't fire again this session.
+    if (isAuthenticated) updateProfileMutation.mutate({ journey: c });
     navigate("intro");
   };
 
@@ -4157,7 +4615,13 @@ export default function App() {
           <StoryIntro character={character} onBegin={() => navigate("dashboard")} />
         )}
         {view === "auth" && (
-          <AuthGate onAuthenticated={() => navigate("dashboard")} />
+          <AuthGate onAuthenticated={() => {
+            // A path picked before signing up (Landing → chars → intro →
+            // forced through /auth) only reaches the backend now that there's
+            // a user to attach it to.
+            if (pendingCharacter) updateProfileMutation.mutate({ journey: pendingCharacter });
+            navigate("dashboard");
+          }} />
         )}
         {view === "dashboard" && (
           <Dashboard character={character} onSelectCity={handleCitySelect} onNav={navigate} />

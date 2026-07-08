@@ -6,7 +6,7 @@ from datetime import datetime
 from pydantic import EmailStr, Field
 
 from app.constants import MIN_PASSWORD_LENGTH
-from app.enums import Language, UserRole
+from app.enums import CharacterJourney, Language, UserRole
 from app.schemas.common import BaseSchema
 
 
@@ -42,6 +42,7 @@ class UserResponse(BaseSchema):
     bio: str | None = None
     avatar_url: str | None = None
     language: Language
+    journey: CharacterJourney | None = None
     created_at: datetime
 
 
@@ -49,3 +50,4 @@ class UserUpdateRequest(BaseSchema):
     full_name: str | None = Field(default=None, max_length=255)
     bio: str | None = Field(default=None, max_length=1000)
     language: Language | None = None
+    journey: CharacterJourney | None = None

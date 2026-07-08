@@ -56,3 +56,21 @@ class Language(StrEnum):
     KAZAKH = "kk"
     RUSSIAN = "ru"
     ENGLISH = "en"
+
+
+class CharacterJourney(StrEnum):
+    """The progression path a player chose at onboarding (Merchant/Diplomat/
+    Explorer) — drives which cities/quests/routes the frontend highlights."""
+
+    MERCHANT = "merchant"
+    DIPLOMAT = "diplomat"
+    EXPLORER = "explorer"
+
+
+class MiniGameType(StrEnum):
+    """Which interactive mini-game (if any) a quest completes with, instead of
+    the plain instant-complete button."""
+
+    KHANS_COURT = "khans_court"
+    CHRONOGRAPH = "chronograph"
+    CARAVAN_BUILDER = "caravan_builder"

@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.enums import QuestStatus
+from app.enums import MiniGameType, QuestStatus
 
 if TYPE_CHECKING:
     from app.models.city import City
@@ -44,5 +44,13 @@ class Quest(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=False,
     )
     quiz_questions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Null = the quest keeps the plain instant-complete button. When set,
+    # `game_data` (JSON, shape depends on `game_type`) drives an interactive
+    # mini-game that must be won before the quest can be completed.
+    game_type: Mapped[MiniGameType | None] = mapped_column(
+        Enum(MiniGameType, name="quest_game_type", native_enum=False),
+        nullable=True,
+    )
+    game_data: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     city: Mapped["City"] = relationship("City", back_populates="quests")

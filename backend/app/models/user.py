@@ -7,7 +7,7 @@ from sqlalchemy import Boolean, DateTime, Enum, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.enums import Language, UserRole
+from app.enums import CharacterJourney, Language, UserRole
 
 if TYPE_CHECKING:
     from app.models.achievement import Achievement
@@ -46,6 +46,12 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=False,
     )
     equipped_frame: Mapped[str] = mapped_column(String(50), default="default", nullable=False)
+    # Null until the player picks a path at onboarding (chars/CharacterSelect) —
+    # existing accounts predating this field simply have no journey yet.
+    journey: Mapped[CharacterJourney | None] = mapped_column(
+        Enum(CharacterJourney, name="user_journey", native_enum=False),
+        nullable=True,
+    )
 
     progress_records: Mapped[list["Progress"]] = relationship(
         "Progress", back_populates="user", cascade="all, delete-orphan"

@@ -1,6 +1,8 @@
 """Quest service."""
 
+import json
 import uuid
+from typing import Any
 
 from app.core.unit_of_work import UnitOfWork
 from app.enums import Language, ProgressType, QuestStatus
@@ -11,6 +13,14 @@ from app.models.user import User
 from app.schemas.common import PaginatedMeta
 from app.schemas.quest import QuestResponse
 from app.utils.i18n import resolve_localized
+
+# Which of a mini-game's JSON item fields are per-language (`<field>_kk/_ru/_en`,
+# resolved down to a plain `text`/`label` key) versus passed through as-is.
+_GAME_ITEM_LOCALIZED_FIELD = {
+    "khans_court": ("statements", "text"),
+    "chronograph": ("events", "text"),
+    "caravan_builder": ("goods", "label"),
+}
 
 
 class QuestService:
@@ -93,5 +103,35 @@ class QuestService:
             status=quest.status,
             completion_status=completion_status,
             cooldown_until=cooldown_until,
+            game_type=quest.game_type,
+            game_data=QuestService._resolve_game_data(quest, language),
             created_at=quest.created_at,
         )
+
+    @staticmethod
+    def _resolve_game_data(quest: Quest, language: Language) -> dict[str, Any] | None:
+        """Parse `Quest.game_data` and collapse each item's `<field>_kk/_ru/_en`
+        trio down to a single localized `text`/`label`, the same fallback order
+        as `resolve_localized` (requested language → kk → en → ru), but for
+        plain dict items rather than ORM attributes.
+        """
+        if quest.game_type is None or not quest.game_data:
+            return None
+        mapping = _GAME_ITEM_LOCALIZED_FIELD.get(quest.game_type.value)
+        if mapping is None:
+            return None
+        list_key, field = mapping
+        raw = json.loads(quest.game_data)
+        items = raw.get(list_key, [])
+
+        def localize(item: dict[str, Any]) -> dict[str, Any]:
+            resolved = None
+            for lang in (language.value, "kk", "en", "ru"):
+                value = item.get(f"{field}_{lang}")
+                if value:
+                    resolved = value
+                    break
+            passthrough = {k: v for k, v in item.items() if not k.startswith(f"{field}_")}
+            return {**passthrough, field: resolved}
+
+        return {list_key: [localize(item) for item in items]}

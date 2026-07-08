@@ -263,6 +263,7 @@
     "viewCityDetails": "Подробнее →",
     "examProgress": "ПРОГРЕСС ЭКЗАМЕНА",
     "currentMission": "ТЕКУЩАЯ МИССИЯ",
+    "currentPath": "Текущий путь: {{role}}",
     "openExamination": "Открыть экзамен города",
     "journeyLog": "ЖУРНАЛ ПУТЕШЕСТВИЯ",
     "openFullOracle": "Открыть полный диалог →",
@@ -392,6 +393,7 @@
   "quests": {
     "title": "Журнал квестов",
     "subtitle": "Выбирайте путь мудро — история помнит каждое решение",
+    "subtitleCity": "Квесты в городе {{city}} — выбирайте путь мудро",
     "unableToLoad": "Не удалось загрузить квесты.",
     "activeQuest": "АКТИВНЫЙ КВЕСТ",
     "selectQuest": "Выберите квест",
@@ -403,7 +405,60 @@
     "completeQuest": "Завершить квест",
     "completing": "Завершение…",
     "noQuestsAvailable": "Пока нет доступных квестов — загляните позже.",
-    "cityUnlocked": "Вы открыли новый город: {{city}}!"
+    "cityUnlocked": "Вы открыли новый город: {{city}}!",
+    "filters": {
+      "all": "Все",
+      "available": "Доступные",
+      "in_progress": "В процессе",
+      "completed": "Завершённые",
+      "thisCity": "Этот город",
+      "allCities": "Все города",
+      "allTypes": "Все типы",
+      "allDifficulties": "Любая сложность"
+    },
+    "sort": {
+      "recommended": "Рекомендуемые",
+      "closest": "Ближе к завершению",
+      "reward": "Наибольшая награда",
+      "newest": "Недавно открытые"
+    },
+    "state": {
+      "completed": "Завершён",
+      "inProgress": "В процессе",
+      "locked": "Заблокирован"
+    }
+  },
+  "games": {
+    "claimReward": "Получить награду",
+    "tryAgain": "Попробовать снова",
+    "khansCourt": {
+      "title": "Суд хана",
+      "statementCount": "Утверждение {{current}} из {{total}}",
+      "true": "Правда",
+      "false": "Ложь",
+      "correct": "Верно!",
+      "incorrect": "Неверно.",
+      "won": "Хан доволен",
+      "wonSubtitle": "Правильных ответов: {{correct}} из {{total}}.",
+      "lost": "Хан не убеждён",
+      "lostSubtitle": "Правильных ответов: {{correct}} из {{total}} — нужно было минимум 3."
+    },
+    "chronograph": {
+      "title": "Хронограф",
+      "instructions": "Перетащите события в правильном хронологическом порядке.",
+      "checkOrder": "Проверить порядок",
+      "notQuite": "Порядок пока неверный — продолжайте настраивать.",
+      "won": "Хронология восстановлена",
+      "moveUp": "Переместить вверх",
+      "moveDown": "Переместить вниз"
+    },
+    "caravanBuilder": {
+      "title": "Сбор каравана",
+      "instructions": "Выберите товары, исторически торговавшиеся в этом городе.",
+      "loadCaravan": "Загрузить караван",
+      "notQuite": "Не тот груз — измените выбор.",
+      "won": "Караван загружен"
+    }
   },
   "certificate": {
     "loading": "Загрузка вашего сертификата…",

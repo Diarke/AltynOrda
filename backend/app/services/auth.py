@@ -100,5 +100,6 @@ class AuthService:
             bio=user.bio,
             avatar_url=user.avatar_url,
             language=user.language,
+            journey=user.journey,
             created_at=user.created_at,
         )

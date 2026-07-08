@@ -25,6 +25,7 @@ class UserService:
             bio=user.bio,
             avatar_url=user.avatar_url,
             language=user.language,
+            journey=user.journey,
             created_at=user.created_at,
         )
 
@@ -35,6 +36,8 @@ class UserService:
             user.bio = data.bio
         if data.language is not None:
             user.language = data.language
+        if data.journey is not None:
+            user.journey = data.journey
         updated = await self._uow.users.update(user)
         return await self.get_profile(updated)
 

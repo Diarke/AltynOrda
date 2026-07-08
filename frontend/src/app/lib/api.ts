@@ -23,6 +23,7 @@ export interface ApiUser {
   bio?: string | null;
   avatar_url?: string | null;
   language: ApiLanguage;
+  journey?: "merchant" | "diplomat" | "explorer" | null;
   created_at: string;
 }
 
@@ -87,6 +88,13 @@ export interface ApiArtifact {
   created_at: string;
 }
 
+// `game_data`'s shape depends on `game_type` — already language-resolved by
+// the backend (QuestService._resolve_game_data), so each item carries a plain
+// `text`/`label` rather than the `_kk`/`_ru`/`_en` trio stored server-side.
+export interface ApiKhansCourtData { statements: { text: string; answer: boolean }[] }
+export interface ApiChronographData { events: { text: string; order: number }[] }
+export interface ApiCaravanBuilderData { goods: { key: string; label: string; correct: boolean }[] }
+
 export interface ApiQuest {
   id: string;
   city_id: string;
@@ -102,6 +110,9 @@ export interface ApiQuest {
   status: string;
   completion_status: string;
   cooldown_until?: string | null;
+  // Null for quests that keep the plain instant-complete button.
+  game_type?: "khans_court" | "chronograph" | "caravan_builder" | null;
+  game_data?: ApiKhansCourtData | ApiChronographData | ApiCaravanBuilderData | null;
   created_at: string;
 }
 
@@ -421,7 +432,7 @@ export async function getCurrentUser() {
   return request<ApiUser>("/users/me");
 }
 
-export async function updateProfileUser(input: { full_name?: string | null; bio?: string | null; language?: ApiLanguage }) {
+export async function updateProfileUser(input: { full_name?: string | null; bio?: string | null; language?: ApiLanguage; journey?: "merchant" | "diplomat" | "explorer" }) {
   return request<ApiUser>("/users/me", {
     method: "PATCH",
     body: JSON.stringify(input),
@@ -461,8 +472,9 @@ export async function listArtifacts(page = 1, pageSize = 20, language: ApiLangua
   return request<PaginatedResponse<ApiArtifact>>(`/artifacts?page=${page}&page_size=${pageSize}&language=${language}`);
 }
 
-export async function listQuests(page = 1, pageSize = 20, language: ApiLanguage = "kk") {
-  return request<PaginatedResponse<ApiQuest>>(`/quests?page=${page}&page_size=${pageSize}&language=${language}`);
+export async function listQuests(page = 1, pageSize = 20, language: ApiLanguage = "kk", cityId?: string) {
+  const cityParam = cityId ? `&city_id=${cityId}` : "";
+  return request<PaginatedResponse<ApiQuest>>(`/quests?page=${page}&page_size=${pageSize}&language=${language}${cityParam}`);
 }
 
 export async function getProgressSummary() {
@@ -721,12 +733,12 @@ export function useArtifacts(page = 1, pageSize = 20) {
   });
 }
 
-export function useQuests(page = 1, pageSize = 20) {
+export function useQuests(page = 1, pageSize = 20, cityId?: string) {
   const { i18n } = useTranslation();
   const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
   return useQuery({
-    queryKey: ["quests", page, pageSize, language],
-    queryFn: () => listQuests(page, pageSize, language),
+    queryKey: ["quests", page, pageSize, language, cityId ?? null],
+    queryFn: () => listQuests(page, pageSize, language, cityId),
     staleTime: 30_000,
     gcTime: 10 * 60_000,
     retry: 2,

@@ -38,6 +38,8 @@ export function NotificationBell() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [panelStyle, setPanelStyle] = useState<{ top: number; left: number; width: number } | null>(null);
 
   const { notificationsQuery, unreadCountQuery, markReadMutation, markAllReadMutation, deleteMutation } =
     useNotifications();
@@ -54,6 +56,43 @@ export function NotificationBell() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
+  // Positioned against the viewport (not the trigger's own offset parent) so the
+  // panel always escapes any `overflow: auto/hidden` ancestor it's rendered
+  // inside (e.g. the dashboard's scrollable sidebar) instead of being clipped by
+  // it, with basic collision detection: it flips from growing right to growing
+  // left (and from below to above) whenever the default placement would spill
+  // past the viewport edge, and its width is capped to fit small screens without
+  // any horizontal scrolling.
+  useEffect(() => {
+    if (!open || !buttonRef.current) return;
+    const PANEL_HEIGHT_ESTIMATE = 320;
+    const MARGIN = 12;
+    const computePosition = () => {
+      const rect = buttonRef.current!.getBoundingClientRect();
+      const width = Math.min(360, window.innerWidth - MARGIN * 2);
+
+      let left = rect.left;
+      if (left + width > window.innerWidth - MARGIN) {
+        left = rect.right - width;
+      }
+      left = Math.min(Math.max(left, MARGIN), Math.max(MARGIN, window.innerWidth - width - MARGIN));
+
+      let top = rect.bottom + 8;
+      if (top + PANEL_HEIGHT_ESTIMATE > window.innerHeight - MARGIN && rect.top > PANEL_HEIGHT_ESTIMATE) {
+        top = rect.top - PANEL_HEIGHT_ESTIMATE - 8;
+      }
+
+      setPanelStyle({ top, left, width });
+    };
+    computePosition();
+    window.addEventListener("resize", computePosition);
+    window.addEventListener("scroll", computePosition, true);
+    return () => {
+      window.removeEventListener("resize", computePosition);
+      window.removeEventListener("scroll", computePosition, true);
+    };
+  }, [open]);
+
   const handleSelect = (notification: ApiNotification) => {
     if (!notification.is_read) markReadMutation.mutate(notification.id);
     const target = TYPE_TARGET[notification.type];
@@ -66,6 +105,7 @@ export function NotificationBell() {
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={buttonRef}
         onClick={() => setOpen((v) => !v)}
         className="relative w-9 h-9 rounded-full flex items-center justify-center"
         style={{ background: "rgba(59,42,19,0.04)", border: "1px solid rgba(59,42,19,0.06)" }}
@@ -81,10 +121,13 @@ export function NotificationBell() {
         )}
       </button>
 
-      {open && (
+      {open && panelStyle && (
         <div
-          className="absolute right-0 top-12 w-[360px] rounded-[16px] overflow-hidden animate-scale-in z-[70]"
-          style={{ background: "#E2D3AC", border: "1px solid rgba(184,137,43,0.15)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}
+          className="fixed rounded-[16px] overflow-hidden animate-scale-in z-[70]"
+          style={{
+            top: panelStyle.top, left: panelStyle.left, width: panelStyle.width,
+            background: "#E2D3AC", border: "1px solid rgba(184,137,43,0.15)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+          }}
         >
           <div className="flex items-center justify-between px-4 h-11 border-b" style={{ borderColor: "rgba(59,42,19,0.06)" }}>
             <span className="orda-cinzel text-xs tracking-widest text-[#2E2013]">{t("notificationCenter.title")}</span>
