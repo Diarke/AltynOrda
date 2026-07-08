@@ -328,7 +328,7 @@ export function QuestsPage() {
           </div>
         </div>
 
-        <div className="pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }} />
+        <div className="pt-2" style={{ borderTop: "1px solid rgba(59,42,19,0.06)" }} />
 
         <div className="space-y-1.5">
           <Label>Language</Label>
@@ -355,7 +355,7 @@ export function QuestsPage() {
           />
         </div>
 
-        <div className="space-y-2 pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        <div className="space-y-2 pt-2" style={{ borderTop: "1px solid rgba(59,42,19,0.06)" }}>
           <div className="flex items-center justify-between">
             <Label>Quiz questions (optional) — {lang}</Label>
             <Button
@@ -368,7 +368,7 @@ export function QuestsPage() {
             </Button>
           </div>
           {questions.map((question, index) => (
-            <div key={index} className="rounded-lg p-3 space-y-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+            <div key={index} className="rounded-lg p-3 space-y-2" style={{ background: "rgba(59,42,19,0.03)" }}>
               <div className="flex items-center gap-2">
                 <Input
                   placeholder={`Question ${index + 1}`}
@@ -413,20 +413,20 @@ export function QuestsPage() {
             <DialogTitle className="orda-cinzel">Preview</DialogTitle>
           </DialogHeader>
           {previewTarget && (
-            <div className="rounded-2xl p-6 border" style={{ background: "rgba(23,26,32,0.8)", borderColor: "rgba(212,175,55,0.12)" }}>
+            <div className="rounded-2xl p-6 border" style={{ background: "rgba(241,233,210,0.8)", borderColor: "rgba(184,137,43,0.12)" }}>
               <Badge className="mb-3">{previewTarget.category}</Badge>
-              <h3 className="orda-cinzel text-xl font-bold mb-1" style={{ color: "#F6F4EC" }}>{displayField(previewTarget, "title")}</h3>
-              <div className="flex items-center gap-2 mb-4 text-xs" style={{ color: "#B7BAC3" }}>
-                <MapPin size={12} color="#D4AF37" /> {cityName(previewTarget.city_id)}
+              <h3 className="orda-cinzel text-xl font-bold mb-1" style={{ color: "#2E2013" }}>{displayField(previewTarget, "title")}</h3>
+              <div className="flex items-center gap-2 mb-4 text-xs" style={{ color: "#5C4E38" }}>
+                <MapPin size={12} color="#B8892B" /> {cityName(previewTarget.city_id)}
               </div>
-              <p className="text-sm italic mb-4" style={{ color: "#F6F4EC" }}>{displayField(previewTarget, "description")}</p>
-              <div className="flex items-center gap-4 text-xs" style={{ color: "#B7BAC3" }}>
-                <span className="flex items-center gap-1"><Zap size={12} color="#D4AF37" /> +{previewTarget.xp_reward} XP</span>
+              <p className="text-sm italic mb-4" style={{ color: "#2E2013" }}>{displayField(previewTarget, "description")}</p>
+              <div className="flex items-center gap-4 text-xs" style={{ color: "#5C4E38" }}>
+                <span className="flex items-center gap-1"><Zap size={12} color="#B8892B" /> +{previewTarget.xp_reward} XP</span>
                 <span>+{previewTarget.coin_reward} coins</span>
                 <Badge variant="outline">{previewTarget.difficulty}</Badge>
               </div>
               {previewTarget.quiz_questions && previewTarget.quiz_questions.length > 0 && (
-                <p className="text-xs mt-3 pt-3 border-t" style={{ color: "#B7BAC3", borderColor: "rgba(255,255,255,0.06)" }}>
+                <p className="text-xs mt-3 pt-3 border-t" style={{ color: "#5C4E38", borderColor: "rgba(59,42,19,0.06)" }}>
                   {previewTarget.quiz_questions.length} quiz question(s) attached
                 </p>
               )}

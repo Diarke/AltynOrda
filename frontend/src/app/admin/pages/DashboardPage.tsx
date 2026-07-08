@@ -55,12 +55,12 @@ export function DashboardPage() {
         <ChartCard title="Coin economy" subtitle={`${coinEconomy?.total_coins_in_circulation ?? 0} coins in circulation`} isLoading={coinLoading} isEmpty={!coinEconomy?.top_holders.length}>
           <div className="h-full overflow-y-auto space-y-2 pr-1">
             {coinEconomy?.top_holders.map((holder, index) => (
-              <div key={holder.user_id} className="flex items-center justify-between text-sm py-1.5" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+              <div key={holder.user_id} className="flex items-center justify-between text-sm py-1.5" style={{ borderBottom: "1px solid rgba(59,42,19,0.05)" }}>
                 <span className="flex items-center gap-2">
                   <span className="text-muted-foreground text-xs w-4">{index + 1}</span>
                   {holder.username}
                 </span>
-                <span className="flex items-center gap-1 font-medium" style={{ color: "#D4AF37" }}>
+                <span className="flex items-center gap-1 font-medium" style={{ color: "#B8892B" }}>
                   <Coins size={12} /> {holder.coins}
                 </span>
               </div>
@@ -69,7 +69,7 @@ export function DashboardPage() {
         </ChartCard>
       </div>
 
-      <div className="rounded-2xl p-5" style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
+      <div className="rounded-2xl p-5" style={{ background: "rgba(241,233,210,0.5)", border: "1px solid rgba(59,42,19,0.06)" }}>
         <h3 className="orda-cinzel text-sm font-semibold mb-4">Recent activity</h3>
         {activityLoading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>
@@ -81,14 +81,14 @@ export function DashboardPage() {
               <div key={index} className="flex items-start gap-3 text-sm">
                 <div
                   className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"
-                  style={{ background: "rgba(212,175,55,0.1)" }}
+                  style={{ background: "rgba(184,137,43,0.1)" }}
                 >
                   {item.type === "chat" ? (
-                    <MessageSquare size={13} color="#D4AF37" />
+                    <MessageSquare size={13} color="#B8892B" />
                   ) : item.type === "certificate" ? (
-                    <Award size={13} color="#D4AF37" />
+                    <Award size={13} color="#B8892B" />
                   ) : (
-                    <Zap size={13} color="#D4AF37" />
+                    <Zap size={13} color="#B8892B" />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">

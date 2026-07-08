@@ -195,14 +195,14 @@ export function AchievementsPage() {
             <DialogTitle className="orda-cinzel">Preview</DialogTitle>
           </DialogHeader>
           {previewTarget && (
-            <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.15)" }}>
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "rgba(212,175,55,0.15)" }}>
+            <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: "rgba(184,137,43,0.05)", border: "1px solid rgba(184,137,43,0.15)" }}>
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "rgba(184,137,43,0.15)" }}>
                 {previewTarget.icon_url ? <img src={previewTarget.icon_url} alt="" className="w-6 h-6" /> : "🏆"}
               </div>
               <div>
-                <div className="text-sm orda-cinzel" style={{ color: "#F6F4EC" }}>{previewTarget.title}</div>
-                <div className="text-xs" style={{ color: "#B7BAC3" }}>{previewTarget.description}</div>
-                <div className="text-[11px] mt-1" style={{ color: "#D4AF37" }}>+{previewTarget.reward_xp} XP / +{previewTarget.reward_coins} coins</div>
+                <div className="text-sm orda-cinzel" style={{ color: "#2E2013" }}>{previewTarget.title}</div>
+                <div className="text-xs" style={{ color: "#5C4E38" }}>{previewTarget.description}</div>
+                <div className="text-[11px] mt-1" style={{ color: "#B8892B" }}>+{previewTarget.reward_xp} XP / +{previewTarget.reward_coins} coins</div>
               </div>
             </div>
           )}

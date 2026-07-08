@@ -9,6 +9,8 @@ from app.models.city import City
 from app.models.embedding import EMBEDDING_DIMENSION, DocumentEmbedding
 from app.models.gallery_image import GalleryImage
 from app.models.gamification_setting import GamificationSetting
+from app.models.group import Group
+from app.models.group_membership import GroupMembership
 from app.models.historical_document import HistoricalDocument
 from app.models.historical_figure import HistoricalFigure
 from app.models.homepage_content import HomepageContent
@@ -31,6 +33,8 @@ __all__ = [
     "EMBEDDING_DIMENSION",
     "GamificationSetting",
     "GalleryImage",
+    "Group",
+    "GroupMembership",
     "HistoricalDocument",
     "HistoricalFigure",
     "HomepageContent",

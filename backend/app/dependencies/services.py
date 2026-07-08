@@ -15,6 +15,7 @@ from app.services.auth import AuthService
 from app.services.certificate import CertificateService
 from app.services.chat import ChatService
 from app.services.city import CityService
+from app.services.group import GroupService
 from app.services.progress import ProgressService
 from app.services.quiz import QuizService
 from app.services.storage import StorageService
@@ -46,6 +47,10 @@ def get_progress_service(uow: Annotated[UnitOfWork, Depends(get_uow)]) -> Progre
 
 def get_certificate_service(uow: Annotated[UnitOfWork, Depends(get_uow)]) -> CertificateService:
     return CertificateService(uow)
+
+
+def get_group_service(uow: Annotated[UnitOfWork, Depends(get_uow)]) -> GroupService:
+    return GroupService(uow)
 
 
 def get_ai_service() -> AIService:

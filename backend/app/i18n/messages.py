@@ -66,6 +66,11 @@ NOTIFICATION_TEMPLATES: dict[NotificationType, dict[Language, tuple[str, str]]] 
         Language.RUSSIAN: ("Сертификат готов", 'Ваш сертификат «{title}» готов к скачиванию!'),
         Language.ENGLISH: ("Certificate ready", 'Your certificate "{title}" is ready to download!'),
     },
+    NotificationType.CITY_UNLOCKED: {
+        Language.KAZAKH: ("Жаңа қала ашылды", '«{title}» енді сіздің саяхатыңызда қолжетімді!'),
+        Language.RUSSIAN: ("Открыт новый город", 'Город «{title}» теперь доступен в вашем путешествии!'),
+        Language.ENGLISH: ("New city unlocked", '"{title}" is now open on your journey!'),
+    },
 }
 
 

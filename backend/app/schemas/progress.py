@@ -6,6 +6,7 @@ from datetime import datetime
 from pydantic import Field
 
 from app.enums import ProgressType, QuestStatus
+from app.schemas.city import CitySummaryResponse
 from app.schemas.common import BaseSchema
 
 
@@ -73,6 +74,9 @@ class QuestCompletionResponse(BaseSchema):
     coins_gained: int
     level: int
     unlocks: dict[str, list[str]]
+    # Set when this quest was the city's last required one — the next city in the
+    # linear journey sequence just opened, so the frontend can animate it in place.
+    unlocked_city: CitySummaryResponse | None = None
 
 
 class DailyLoginResponse(BaseSchema):

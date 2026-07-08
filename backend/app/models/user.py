@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.achievement import Achievement
     from app.models.certificate import Certificate
     from app.models.chat_history import ChatHistory
+    from app.models.group import Group
     from app.models.progress import Progress
     from app.models.user_cosmetic import UserCosmetic
 
@@ -60,4 +61,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     cosmetics: Mapped[list["UserCosmetic"]] = relationship(
         "UserCosmetic", back_populates="user", cascade="all, delete-orphan"
+    )
+    owned_groups: Mapped[list["Group"]] = relationship(
+        "Group", back_populates="owner", cascade="all, delete-orphan"
     )

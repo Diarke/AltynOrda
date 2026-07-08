@@ -136,7 +136,7 @@ export function ImageCropper({ file, aspect = 4 / 3, onCancel, onCropped }: Imag
               }}
             />
           )}
-          <div className="absolute inset-0 pointer-events-none border-2 rounded-lg" style={{ borderColor: "rgba(212,175,55,0.6)" }} />
+          <div className="absolute inset-0 pointer-events-none border-2 rounded-lg" style={{ borderColor: "rgba(184,137,43,0.6)" }} />
         </div>
 
         <div className="flex items-center gap-3 px-1">

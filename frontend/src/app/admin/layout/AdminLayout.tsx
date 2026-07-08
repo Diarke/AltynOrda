@@ -8,14 +8,14 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const { user, logoutMutation } = useAuthSession();
 
   return (
-    <div className="flex min-h-screen orda-inter" style={{ background: "#0F1115", color: "#F6F4EC" }}>
+    <div className="flex min-h-screen orda-inter" style={{ background: "#EDE1C4", color: "#2E2013" }}>
       <style>{GLOBAL_CSS}</style>
       <Toaster position="top-right" />
       <AdminSidebar />
       <div className="flex-1 min-w-0">
         <header
           className="h-16 flex items-center justify-end gap-4 px-6"
-          style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+          style={{ borderBottom: "1px solid rgba(59,42,19,0.16)" }}
         >
           <div className="text-right">
             <div className="text-sm font-medium">{user?.username ?? "Admin"}</div>
@@ -23,7 +23,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           </div>
           <div
             className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold orda-cinzel overflow-hidden"
-            style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)", color: "#0F1115" }}
+            style={{ background: "linear-gradient(135deg,#B8892B,#8C6239)", color: "#EDE1C4" }}
           >
             {(user?.username?.[0] || "A").toUpperCase()}
           </div>

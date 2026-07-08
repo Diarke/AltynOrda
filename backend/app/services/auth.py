@@ -6,8 +6,9 @@ from app.auth.jwt import create_access_token, create_refresh_token, decode_token
 from app.auth.password import hash_password, verify_password
 from app.constants import MIN_PASSWORD_LENGTH
 from app.core.unit_of_work import UnitOfWork
-from app.enums import UserRole
+from app.enums import ProgressType, QuestStatus, UserRole
 from app.exceptions import AuthenticationException, ConflictException, ValidationException
+from app.models.progress import Progress
 from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
 
@@ -36,7 +37,24 @@ class AuthService:
             is_active=True,
         )
         await self._uow.users.create(user)
+        await self._open_first_city(user)
         return self._build_tokens(user)
+
+    async def _open_first_city(self, user: User) -> None:
+        """Every journey starts somewhere — opens the first city in the linear
+        sequence (lowest sort_order) so a brand-new user has exactly one city
+        available immediately, per the same rule that unlocks each next one."""
+        first_city = await self._uow.cities.get_first()
+        if first_city is None:
+            return
+        await self._uow.progress.create(
+            Progress(
+                user_id=user.id,
+                entity_type=ProgressType.CITY,
+                entity_id=first_city.id,
+                status=QuestStatus.IN_PROGRESS,
+            )
+        )
 
     async def login(self, data: LoginRequest) -> TokenResponse:
         user = await self._uow.users.get_by_email(data.email.lower())

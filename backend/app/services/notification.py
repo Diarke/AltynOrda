@@ -119,6 +119,9 @@ class NotificationService:
         if entity_type == "quest":
             quest = await self._uow.quests.get_by_id(entity_id)
             return resolve_localized(quest, "title", language) if quest else None
+        if entity_type == "city":
+            city = await self._uow.cities.get_by_id(entity_id)
+            return resolve_localized(city, "name", language) if city else None
         if entity_type == "certificate":
             certificate = await self._uow.certificates.get_by_id(entity_id)
             if certificate is None:

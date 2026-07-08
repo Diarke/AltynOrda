@@ -21,6 +21,7 @@
     "map": "Map",
     "artifacts": "Artifacts",
     "aiHistorian": "AI Historian",
+    "ordas": "Ordas",
     "about": "About",
     "enter": "Enter",
     "passport": "Passport",
@@ -233,7 +234,8 @@
       "completed": "Completed",
       "inProgress": "In progress",
       "notStarted": "Not started"
-    }
+    },
+    "lockedTooltip": "Complete previous cities to unlock this destination."
   },
   "dashboard": {
     "journey": "JOURNEY",
@@ -253,12 +255,53 @@
     "level": "Level {{level}}",
     "xpEarned": "{{xp}} XP earned",
     "notifications": "NOTIFICATIONS",
-    "mobileQuestsPanel": "Quests & Artifacts",
-    "mobileProgressPanel": "Progress & Alerts",
+    "mobileQuestsPanel": "Passport",
+    "mobileProgressPanel": "AI Oracle",
     "noNotifications": "No notifications yet.",
     "activeCity": "ACTIVE CITY",
     "noActiveCity": "Select a city on the map to begin.",
-    "viewCityDetails": "View Details →"
+    "viewCityDetails": "View Details →",
+    "examProgress": "EXAM PROGRESS",
+    "currentMission": "CURRENT MISSION",
+    "openExamination": "Open City Examination",
+    "journeyLog": "JOURNEY LOG",
+    "openFullOracle": "Open full conversation →",
+    "tabs": {
+      "world": "World",
+      "cities": "Cities",
+      "currentCity": "Current City",
+      "artifacts": "Artifacts",
+      "timeline": "Timeline"
+    }
+  },
+  "groups": {
+    "title": "Ordas",
+    "subtitle": "Form an Orda with classmates or friends and compete on a shared leaderboard.",
+    "createTitle": "Create an Orda",
+    "createPlaceholder": "Orda name",
+    "createButton": "Create",
+    "creating": "Creating…",
+    "joinTitle": "Join with a code",
+    "joinPlaceholder": "INVITE CODE",
+    "joinButton": "Join",
+    "joining": "Joining…",
+    "myOrdas": "MY ORDAS",
+    "noGroups": "You haven't joined an Orda yet — create one or join with a code.",
+    "memberCount": "{{count}} member",
+    "memberCount_other": "{{count}} members",
+    "inviteLink": "INVITE LINK",
+    "inviteCode": "Invite code",
+    "copyLink": "Copy",
+    "copied": "Copied!",
+    "members": "MEMBERS",
+    "leaderboard": "LEADERBOARD",
+    "levelXp": "Level {{level}} · {{xp}} XP",
+    "levelShort": "Lv {{level}}",
+    "notFound": "This Orda couldn't be found.",
+    "backToOrdas": "Back to Ordas",
+    "joinPageTitle": "Join an Orda",
+    "joinPageSigninPrompt": "Sign in first, then reopen your invite link to join.",
+    "joinPageSigninButton": "Sign in"
   },
   "city": {
     "backToMap": "Back to Map",
@@ -357,7 +400,8 @@
     "checkBackLater": "Check back later.",
     "completeQuest": "Complete Quest",
     "completing": "Completing…",
-    "noQuestsAvailable": "No quests available right now — check back soon."
+    "noQuestsAvailable": "No quests available right now — check back soon.",
+    "cityUnlocked": "You've unlocked a new city: {{city}}!"
   },
   "certificate": {
     "loading": "Loading your certificate…",

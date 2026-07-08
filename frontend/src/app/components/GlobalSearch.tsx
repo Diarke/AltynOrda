@@ -45,9 +45,9 @@ export function GlobalSearchTrigger() {
         onClick={() => setOpen(true)}
         title={t("search.shortcutHint")}
         className="w-9 h-9 rounded-full flex items-center justify-center transition-colors"
-        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+        style={{ background: "rgba(59,42,19,0.04)", border: "1px solid rgba(59,42,19,0.06)" }}
       >
-        <Search size={15} color="#B7BAC3" />
+        <Search size={15} color="#5C4E38" />
       </button>
       <GlobalSearch open={open} onClose={() => setOpen(false)} />
     </>
@@ -165,17 +165,17 @@ function GlobalSearch({ open, onClose }: GlobalSearchProps) {
     >
       <div
         className="w-full max-w-xl rounded-[20px] overflow-hidden animate-scale-in"
-        style={{ background: "#171A20", border: "1px solid rgba(212,175,55,0.15)", boxShadow: "0 0 80px rgba(212,175,55,0.1)" }}
+        style={{ background: "#E2D3AC", border: "1px solid rgba(184,137,43,0.15)", boxShadow: "0 0 80px rgba(184,137,43,0.1)" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Input row */}
-        <div className="flex items-center gap-3 px-5 h-14 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+        <div className="flex items-center gap-3 px-5 h-14 border-b" style={{ borderColor: "rgba(59,42,19,0.06)" }}>
           {figureId ? (
             <button onClick={() => setFigureId(null)} className="flex-shrink-0" aria-label={t("common.back")}>
-              <ArrowLeft size={16} color="#B7BAC3" />
+              <ArrowLeft size={16} color="#5C4E38" />
             </button>
           ) : (
-            <Search size={16} color="#B7BAC3" className="flex-shrink-0" />
+            <Search size={16} color="#5C4E38" className="flex-shrink-0" />
           )}
           {!figureId && (
             <input
@@ -184,12 +184,12 @@ function GlobalSearch({ open, onClose }: GlobalSearchProps) {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={t("search.placeholder")}
-              className="flex-1 bg-transparent outline-none orda-inter text-sm text-[#F6F4EC] placeholder:text-[#6B6E77]"
+              className="flex-1 bg-transparent outline-none orda-inter text-sm text-[#2E2013] placeholder:text-[#9C8F72]"
             />
           )}
-          {figureId && <span className="flex-1 orda-cinzel text-sm text-[#F6F4EC]">{t("search.categories.historicalFigures")}</span>}
+          {figureId && <span className="flex-1 orda-cinzel text-sm text-[#2E2013]">{t("search.categories.historicalFigures")}</span>}
           <button onClick={onClose} className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center hover:bg-white/5" aria-label={t("search.close")}>
-            <X size={13} color="#B7BAC3" />
+            <X size={13} color="#5C4E38" />
           </button>
         </div>
 
@@ -199,23 +199,23 @@ function GlobalSearch({ open, onClose }: GlobalSearchProps) {
             <FigureDetail figure={figure} loading={figureLoading} />
           ) : debouncedQuery.trim().length === 0 ? (
             <div className="py-10 text-center px-6">
-              <Search size={22} color="#4A4D57" className="mx-auto mb-3" />
-              <p className="orda-inter text-xs text-[#6B6E77]">{t("search.emptyPrompt")}</p>
+              <Search size={22} color="#9C8F72" className="mx-auto mb-3" />
+              <p className="orda-inter text-xs text-[#9C8F72]">{t("search.emptyPrompt")}</p>
             </div>
           ) : isLoading || isFetching ? (
             <div className="space-y-2 p-2">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-11 rounded-[12px]" style={{ background: "rgba(255,255,255,0.04)" }} />
+                <div key={i} className="h-11 rounded-[12px]" style={{ background: "rgba(59,42,19,0.04)" }} />
               ))}
             </div>
           ) : totalResults === 0 ? (
             <div className="py-10 text-center px-6">
-              <p className="orda-inter text-sm text-[#B7BAC3]">{t("search.noResults", { query: debouncedQuery })}</p>
+              <p className="orda-inter text-sm text-[#5C4E38]">{t("search.noResults", { query: debouncedQuery })}</p>
             </div>
           ) : (
             sections.map(({ category, items, startIndex }) => (
               <div key={category} className="mb-2">
-                <div className="px-3 pt-2 pb-1 text-[10px] orda-cinzel tracking-widest text-[#6B6E77]">
+                <div className="px-3 pt-2 pb-1 text-[10px] orda-cinzel tracking-widest text-[#9C8F72]">
                   {t(`search.categories.${categoryLabelKey(category)}`)}
                 </div>
                 {items.map((item, i) => {
@@ -228,17 +228,17 @@ function GlobalSearch({ open, onClose }: GlobalSearchProps) {
                       onMouseEnter={() => setActiveIndex(globalIndex)}
                       onClick={() => selectResult(category, item)}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-[12px] text-left transition-colors"
-                      style={{ background: isActive ? "rgba(212,175,55,0.1)" : "transparent" }}
+                      style={{ background: isActive ? "rgba(184,137,43,0.1)" : "transparent" }}
                     >
                       <div className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0"
-                        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                        <Icon size={14} color={isActive ? "#D4AF37" : "#B7BAC3"} />
+                        style={{ background: "rgba(59,42,19,0.04)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                        <Icon size={14} color={isActive ? "#B8892B" : "#5C4E38"} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="orda-inter text-sm text-[#F6F4EC] truncate">{item.title}</div>
-                        {item.subtitle && <div className="orda-inter text-[11px] text-[#6B6E77] truncate">{item.subtitle}</div>}
+                        <div className="orda-inter text-sm text-[#2E2013] truncate">{item.title}</div>
+                        {item.subtitle && <div className="orda-inter text-[11px] text-[#9C8F72] truncate">{item.subtitle}</div>}
                       </div>
-                      <ChevronRight size={13} color="#4A4D57" className="flex-shrink-0" />
+                      <ChevronRight size={13} color="#9C8F72" className="flex-shrink-0" />
                     </button>
                   );
                 })}
@@ -247,8 +247,8 @@ function GlobalSearch({ open, onClose }: GlobalSearchProps) {
           )}
         </div>
 
-        <div className="flex items-center justify-between px-5 h-10 border-t text-[10px] orda-inter text-[#6B6E77]"
-          style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+        <div className="flex items-center justify-between px-5 h-10 border-t text-[10px] orda-inter text-[#9C8F72]"
+          style={{ borderColor: "rgba(59,42,19,0.06)" }}>
           <span>{t("search.hintNavigate")}</span>
           <span>{t("search.hintClose")}</span>
         </div>
@@ -272,9 +272,9 @@ function FigureDetail({ figure, loading }: { figure: { name: string; title: stri
   if (loading || !figure) {
     return (
       <div className="p-4 space-y-3">
-        <div className="h-4 w-40 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
-        <div className="h-3 w-24 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
-        <div className="h-16 rounded-[12px]" style={{ background: "rgba(255,255,255,0.04)" }} />
+        <div className="h-4 w-40 rounded-full" style={{ background: "rgba(59,42,19,0.05)" }} />
+        <div className="h-3 w-24 rounded-full" style={{ background: "rgba(59,42,19,0.05)" }} />
+        <div className="h-16 rounded-[12px]" style={{ background: "rgba(59,42,19,0.04)" }} />
       </div>
     );
   }
@@ -282,23 +282,23 @@ function FigureDetail({ figure, loading }: { figure: { name: string; title: stri
     <div className="p-4">
       <div className="flex items-center gap-3 mb-3">
         <div className="w-11 h-11 rounded-[12px] flex items-center justify-center overflow-hidden flex-shrink-0"
-          style={{ background: "rgba(212,175,55,0.1)", border: "1px solid rgba(212,175,55,0.2)" }}>
+          style={{ background: "rgba(184,137,43,0.1)", border: "1px solid rgba(184,137,43,0.2)" }}>
           {figure.image_url ? (
             <img src={figure.image_url} alt="" className="w-full h-full object-cover" />
           ) : (
-            <Users size={18} color="#D4AF37" />
+            <Users size={18} color="#B8892B" />
           )}
         </div>
         <div>
-          <div className="orda-cinzel text-sm font-semibold text-[#F6F4EC]">{figure.name}</div>
-          <div className="orda-inter text-[11px] text-[#B7BAC3]">{figure.title} · {figure.era}</div>
+          <div className="orda-cinzel text-sm font-semibold text-[#2E2013]">{figure.name}</div>
+          <div className="orda-inter text-[11px] text-[#5C4E38]">{figure.title} · {figure.era}</div>
         </div>
       </div>
-      <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed">{figure.description}</p>
+      <p className="orda-inter text-sm text-[#5C4E38] leading-relaxed">{figure.description}</p>
       {figure.significance && (
-        <div className="mt-3 pt-3 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-          <div className="text-[10px] orda-cinzel tracking-widest text-[#6B6E77] mb-1">{t("search.significance")}</div>
-          <p className="orda-inter text-xs text-[#B7BAC3] leading-relaxed">{figure.significance}</p>
+        <div className="mt-3 pt-3 border-t" style={{ borderColor: "rgba(59,42,19,0.06)" }}>
+          <div className="text-[10px] orda-cinzel tracking-widest text-[#9C8F72] mb-1">{t("search.significance")}</div>
+          <p className="orda-inter text-xs text-[#5C4E38] leading-relaxed">{figure.significance}</p>
         </div>
       )}
     </div>

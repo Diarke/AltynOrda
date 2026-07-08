@@ -212,7 +212,7 @@ export function AchievementDefinitionsPage() {
           <Input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} required />
         </div>
 
-        <div className="pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }} />
+        <div className="pt-2" style={{ borderTop: "1px solid rgba(59,42,19,0.06)" }} />
 
         <div className="space-y-1.5">
           <Label>Language</Label>
@@ -302,14 +302,14 @@ export function AchievementDefinitionsPage() {
             <DialogTitle className="orda-cinzel">Preview</DialogTitle>
           </DialogHeader>
           {previewTarget && (
-            <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.15)" }}>
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "rgba(212,175,55,0.15)" }}>
+            <div className="flex items-center gap-3 p-4 rounded-xl" style={{ background: "rgba(184,137,43,0.05)", border: "1px solid rgba(184,137,43,0.15)" }}>
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "rgba(184,137,43,0.15)" }}>
                 {previewTarget.icon_url || "🏆"}
               </div>
               <div>
-                <div className="text-sm orda-cinzel" style={{ color: "#F6F4EC" }}>{displayField(previewTarget, "title")}</div>
-                <div className="text-xs" style={{ color: "#B7BAC3" }}>{displayField(previewTarget, "description")}</div>
-                <div className="text-[11px] mt-1" style={{ color: "#D4AF37" }}>
+                <div className="text-sm orda-cinzel" style={{ color: "#2E2013" }}>{displayField(previewTarget, "title")}</div>
+                <div className="text-xs" style={{ color: "#5C4E38" }}>{displayField(previewTarget, "description")}</div>
+                <div className="text-[11px] mt-1" style={{ color: "#B8892B" }}>
                   {metricLabel(previewTarget.metric)} ≥ {previewTarget.threshold.toLocaleString()} · +{previewTarget.reward_xp} XP / +{previewTarget.reward_coins} coins
                 </div>
               </div>

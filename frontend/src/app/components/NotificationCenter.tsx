@@ -68,13 +68,13 @@ export function NotificationBell() {
       <button
         onClick={() => setOpen((v) => !v)}
         className="relative w-9 h-9 rounded-full flex items-center justify-center"
-        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
+        style={{ background: "rgba(59,42,19,0.04)", border: "1px solid rgba(59,42,19,0.06)" }}
       >
-        <Bell size={15} color="#B7BAC3" />
+        <Bell size={15} color="#5C4E38" />
         {unreadCount > 0 && (
           <span
             className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center text-[10px] font-bold leading-none"
-            style={{ background: "#57D6D1", color: "#0F1115", border: "2px solid #0F1115" }}
+            style={{ background: "#6B8CA3", color: "#EDE1C4", border: "2px solid #EDE1C4" }}
           >
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
@@ -84,14 +84,14 @@ export function NotificationBell() {
       {open && (
         <div
           className="absolute right-0 top-12 w-[360px] rounded-[16px] overflow-hidden animate-scale-in z-[70]"
-          style={{ background: "#171A20", border: "1px solid rgba(212,175,55,0.15)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}
+          style={{ background: "#E2D3AC", border: "1px solid rgba(184,137,43,0.15)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}
         >
-          <div className="flex items-center justify-between px-4 h-11 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-            <span className="orda-cinzel text-xs tracking-widest text-[#F6F4EC]">{t("notificationCenter.title")}</span>
+          <div className="flex items-center justify-between px-4 h-11 border-b" style={{ borderColor: "rgba(59,42,19,0.06)" }}>
+            <span className="orda-cinzel text-xs tracking-widest text-[#2E2013]">{t("notificationCenter.title")}</span>
             {unreadCount > 0 && (
               <button
                 onClick={() => markAllReadMutation.mutate()}
-                className="flex items-center gap-1 text-[11px] orda-inter text-[#D4AF37] hover:text-[#F6F4EC] transition-colors"
+                className="flex items-center gap-1 text-[11px] orda-inter text-[#B8892B] hover:text-[#2E2013] transition-colors"
               >
                 <Check size={11} /> {t("notificationCenter.markAllRead")}
               </button>
@@ -102,13 +102,13 @@ export function NotificationBell() {
             {notificationsQuery.isLoading ? (
               <div className="p-3 space-y-2">
                 {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="h-14 rounded-[12px]" style={{ background: "rgba(255,255,255,0.04)" }} />
+                  <div key={i} className="h-14 rounded-[12px]" style={{ background: "rgba(59,42,19,0.04)" }} />
                 ))}
               </div>
             ) : notifications.length === 0 ? (
               <div className="py-10 text-center px-6">
-                <Bell size={20} color="#4A4D57" className="mx-auto mb-3" />
-                <p className="orda-inter text-xs text-[#6B6E77]">{t("notificationCenter.empty")}</p>
+                <Bell size={20} color="#9C8F72" className="mx-auto mb-3" />
+                <p className="orda-inter text-xs text-[#9C8F72]">{t("notificationCenter.empty")}</p>
               </div>
             ) : (
               <div className="p-2">
@@ -123,19 +123,19 @@ export function NotificationBell() {
                       <div
                         className="w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0 mt-0.5"
                         style={{
-                          background: notification.is_read ? "rgba(255,255,255,0.04)" : "rgba(212,175,55,0.12)",
-                          border: `1px solid ${notification.is_read ? "rgba(255,255,255,0.06)" : "rgba(212,175,55,0.25)"}`,
+                          background: notification.is_read ? "rgba(59,42,19,0.04)" : "rgba(184,137,43,0.12)",
+                          border: `1px solid ${notification.is_read ? "rgba(59,42,19,0.06)" : "rgba(184,137,43,0.25)"}`,
                         }}
                       >
-                        <Icon size={14} color={notification.is_read ? "#B7BAC3" : "#D4AF37"} />
+                        <Icon size={14} color={notification.is_read ? "#5C4E38" : "#B8892B"} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="orda-inter text-sm text-[#F6F4EC] truncate">{notification.title}</span>
-                          {!notification.is_read && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#57D6D1" }} />}
+                          <span className="orda-inter text-sm text-[#2E2013] truncate">{notification.title}</span>
+                          {!notification.is_read && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#6B8CA3" }} />}
                         </div>
-                        <p className="orda-inter text-[11px] text-[#B7BAC3] leading-relaxed line-clamp-2">{notification.message}</p>
-                        <span className="orda-inter text-[10px] text-[#6B6E77]">
+                        <p className="orda-inter text-[11px] text-[#5C4E38] leading-relaxed line-clamp-2">{notification.message}</p>
+                        <span className="orda-inter text-[10px] text-[#9C8F72]">
                           {formatRelativeTime(notification.created_at, i18n.resolvedLanguage || "en")}
                         </span>
                       </div>
@@ -147,7 +147,7 @@ export function NotificationBell() {
                         className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-lg flex items-center justify-center hover:bg-white/5 flex-shrink-0"
                         aria-label={t("notificationCenter.delete")}
                       >
-                        <X size={12} color="#B7BAC3" />
+                        <X size={12} color="#5C4E38" />
                       </button>
                     </div>
                   );

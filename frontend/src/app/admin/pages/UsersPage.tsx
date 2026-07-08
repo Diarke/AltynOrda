@@ -204,9 +204,9 @@ export function UsersPage() {
             <DialogTitle className="orda-cinzel">Preview</DialogTitle>
           </DialogHeader>
           {previewTarget && (
-            <div className="rounded-xl p-4 space-y-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+            <div className="rounded-xl p-4 space-y-2" style={{ background: "rgba(59,42,19,0.03)" }}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold" style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)", color: "#0F1115" }}>
+                <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold" style={{ background: "linear-gradient(135deg,#B8892B,#8C6239)", color: "#EDE1C4" }}>
                   {previewTarget.username[0]?.toUpperCase()}
                 </div>
                 <div>

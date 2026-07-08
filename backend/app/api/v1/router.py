@@ -10,6 +10,7 @@ from app.api.v1 import (
     chat,
     cities,
     content,
+    groups,
     historical_figures,
     notifications,
     progress,
@@ -28,6 +29,7 @@ api_v1_router.include_router(quests.router)
 api_v1_router.include_router(progress.router)
 api_v1_router.include_router(chat.router)
 api_v1_router.include_router(certificates.router)
+api_v1_router.include_router(groups.router)
 api_v1_router.include_router(quiz.router)
 api_v1_router.include_router(content.router)
 api_v1_router.include_router(historical_figures.router)

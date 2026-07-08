@@ -21,6 +21,7 @@
     "map": "Карта",
     "artifacts": "Артефакты",
     "aiHistorian": "ИИ-историк",
+    "ordas": "Орды",
     "about": "О проекте",
     "enter": "Войти",
     "passport": "Паспорт",
@@ -233,7 +234,8 @@
       "completed": "Завершено",
       "inProgress": "В процессе",
       "notStarted": "Не начато"
-    }
+    },
+    "lockedTooltip": "Завершите предыдущие города, чтобы открыть это направление."
   },
   "dashboard": {
     "journey": "ПУТЕШЕСТВИЕ",
@@ -253,12 +255,55 @@
     "level": "Уровень {{level}}",
     "xpEarned": "Заработано {{xp}} XP",
     "notifications": "УВЕДОМЛЕНИЯ",
-    "mobileQuestsPanel": "Задания и артефакты",
-    "mobileProgressPanel": "Прогресс и уведомления",
+    "mobileQuestsPanel": "Паспорт",
+    "mobileProgressPanel": "AI Оракул",
     "noNotifications": "Уведомлений пока нет.",
     "activeCity": "АКТИВНЫЙ ГОРОД",
     "noActiveCity": "Выберите город на карте, чтобы начать.",
-    "viewCityDetails": "Подробнее →"
+    "viewCityDetails": "Подробнее →",
+    "examProgress": "ПРОГРЕСС ЭКЗАМЕНА",
+    "currentMission": "ТЕКУЩАЯ МИССИЯ",
+    "openExamination": "Открыть экзамен города",
+    "journeyLog": "ЖУРНАЛ ПУТЕШЕСТВИЯ",
+    "openFullOracle": "Открыть полный диалог →",
+    "tabs": {
+      "world": "Мир",
+      "cities": "Города",
+      "currentCity": "Текущий город",
+      "artifacts": "Артефакты",
+      "timeline": "Хроника"
+    }
+  },
+  "groups": {
+    "title": "Орды",
+    "subtitle": "Создайте Орду с одноклассниками или друзьями и соревнуйтесь в общем рейтинге.",
+    "createTitle": "Создать Орду",
+    "createPlaceholder": "Название Орды",
+    "createButton": "Создать",
+    "creating": "Создание…",
+    "joinTitle": "Присоединиться по коду",
+    "joinPlaceholder": "КОД ПРИГЛАШЕНИЯ",
+    "joinButton": "Присоединиться",
+    "joining": "Присоединение…",
+    "myOrdas": "МОИ ОРДЫ",
+    "noGroups": "Вы пока не состоите ни в одной Орде — создайте свою или присоединитесь по коду.",
+    "memberCount_one": "{{count}} участник",
+    "memberCount_few": "{{count}} участника",
+    "memberCount_many": "{{count}} участников",
+    "memberCount_other": "{{count}} участника",
+    "inviteLink": "ССЫЛКА-ПРИГЛАШЕНИЕ",
+    "inviteCode": "Код приглашения",
+    "copyLink": "Копировать",
+    "copied": "Скопировано!",
+    "members": "УЧАСТНИКИ",
+    "leaderboard": "РЕЙТИНГ",
+    "levelXp": "Уровень {{level}} · {{xp}} XP",
+    "levelShort": "Ур. {{level}}",
+    "notFound": "Эта Орда не найдена.",
+    "backToOrdas": "Назад к Ордам",
+    "joinPageTitle": "Присоединиться к Орде",
+    "joinPageSigninPrompt": "Сначала войдите в систему, затем снова откройте ссылку-приглашение.",
+    "joinPageSigninButton": "Войти"
   },
   "city": {
     "backToMap": "Назад к карте",
@@ -357,7 +402,8 @@
     "checkBackLater": "Загляните позже.",
     "completeQuest": "Завершить квест",
     "completing": "Завершение…",
-    "noQuestsAvailable": "Пока нет доступных квестов — загляните позже."
+    "noQuestsAvailable": "Пока нет доступных квестов — загляните позже.",
+    "cityUnlocked": "Вы открыли новый город: {{city}}!"
   },
   "certificate": {
     "loading": "Загрузка вашего сертификата…",

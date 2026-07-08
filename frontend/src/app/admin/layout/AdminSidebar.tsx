@@ -38,17 +38,17 @@ export function AdminSidebar() {
   return (
     <aside
       className="w-60 shrink-0 flex flex-col h-screen sticky top-0"
-      style={{ background: "rgba(15,17,21,0.96)", borderRight: "1px solid rgba(255,255,255,0.06)" }}
+      style={{ background: "rgba(226,211,172,0.9)", borderRight: "1px solid rgba(59,42,19,0.16)" }}
     >
-      <div className="h-16 flex items-center gap-3 px-5" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      <div className="h-16 flex items-center gap-3 px-5" style={{ borderBottom: "1px solid rgba(59,42,19,0.16)" }}>
         <div
           className="w-8 h-8 rounded-lg flex items-center justify-center"
-          style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)" }}
+          style={{ background: "linear-gradient(135deg,#B8892B,#8C6239)" }}
         >
-          <span className="text-[#0F1115] font-bold text-sm orda-cinzel">O</span>
+          <span className="text-[#EDE1C4] font-bold text-sm orda-cinzel">O</span>
         </div>
         <div>
-          <div className="orda-cinzel text-sm font-bold tracking-[0.15em]" style={{ color: "#D4AF37" }}>
+          <div className="orda-cinzel text-sm font-bold tracking-[0.15em]" style={{ color: "#B8892B" }}>
             ORDA
           </div>
           <div className="text-[10px] text-muted-foreground tracking-wide">ADMIN</div>
@@ -70,7 +70,7 @@ export function AdminSidebar() {
         ))}
       </nav>
 
-      <div className="p-3" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+      <div className="p-3" style={{ borderTop: "1px solid rgba(59,42,19,0.16)" }}>
         <a
           href="/"
           className="admin-nav-link flex items-center gap-3 px-3 py-2.5 text-sm"

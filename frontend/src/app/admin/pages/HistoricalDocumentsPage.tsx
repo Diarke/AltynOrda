@@ -294,10 +294,10 @@ export function HistoricalDocumentsPage() {
                 {previewTarget.author && <span>· {previewTarget.author}</span>}
                 {previewTarget.year && <span>· {previewTarget.year}</span>}
               </div>
-              <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: "#B7BAC3" }}>
+              <p className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: "#5C4E38" }}>
                 {previewTarget.content}
               </p>
-              <p className="text-xs pt-2 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+              <p className="text-xs pt-2 border-t" style={{ borderColor: "rgba(59,42,19,0.06)" }}>
                 Source: {previewTarget.source} · {previewTarget.embedded_chunks} indexed chunks
               </p>
             </div>

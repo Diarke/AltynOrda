@@ -8,10 +8,12 @@ from app.core.unit_of_work import UnitOfWork
 from app.enums import AchievementMetric, Language, NotificationType, ProgressType, QuestStatus
 from app.exceptions import ConflictException, NotFoundException, ValidationException
 from app.models.achievement import Achievement
+from app.models.city import City
 from app.models.progress import Progress
 from app.models.quest import Quest
 from app.models.user import User
 from app.models.user_cosmetic import UserCosmetic
+from app.schemas.city import CitySummaryResponse
 from app.schemas.progress import (
     AchievementResponse,
     CoinSpendResponse,
@@ -198,6 +200,7 @@ class ProgressService:
 
         await self._uow.users.update(user)
         await self._award_achievements(user)
+        unlocked_city = await self.unlock_next_city(user)
         await self._uow.session.commit()
 
         return QuestCompletionResponse(
@@ -207,6 +210,81 @@ class ProgressService:
             coins_gained=reward_coins,
             level=user.level,
             unlocks=self._get_unlocks(user.level),
+            unlocked_city=unlocked_city,
+        )
+
+    async def unlock_next_city(
+        self, user: User, language: Language | None = None
+    ) -> CitySummaryResponse | None:
+        """Linear city progression: if the user's current (most recently opened,
+        not-yet-completed) city now has every one of its quests completed, mark
+        that city's progress COMPLETED and open the next city in sequence.
+
+        Called automatically at the end of `complete_quest`, and also exposed
+        standalone via `POST /cities/unlock-next` so the frontend can re-check
+        without needing to complete another quest first. Returns the newly
+        unlocked city, or None if there was nothing to unlock yet.
+        """
+        resolved_language = language or user.language
+        city_records = await self._uow.progress.get_by_user_and_entity_type(user.id, ProgressType.CITY)
+        open_records = [r for r in city_records if r.status != QuestStatus.COMPLETED]
+        if not open_records:
+            return None
+
+        # Should be exactly one open city at a time in a linear journey, but if
+        # more than one somehow exists, resolve to the earliest in sequence.
+        current_city: City | None = None
+        current_record: Progress | None = None
+        for record in open_records:
+            city = await self._uow.cities.get_by_id(record.entity_id)
+            if city is not None and (current_city is None or city.sort_order < current_city.sort_order):
+                current_city, current_record = city, record
+        if current_city is None or current_record is None:
+            return None
+
+        city_quests = await self._uow.quests.get_by_city(current_city.id, limit=10_000)
+        if not city_quests:
+            return None
+        completed_quest_ids = {
+            p.entity_id
+            for p in await self._uow.progress.get_by_user_and_entity_type(user.id, ProgressType.QUEST)
+            if p.status == QuestStatus.COMPLETED
+        }
+        if not all(q.id in completed_quest_ids for q in city_quests):
+            return None
+
+        current_record.status = QuestStatus.COMPLETED
+        current_record.completed_at = datetime.now(UTC)
+        await self._uow.progress.update(current_record)
+
+        next_city = await self._uow.cities.get_next(current_city.sort_order)
+        if next_city is None:
+            return None
+        if await self._uow.progress.get_user_entity_progress(user.id, ProgressType.CITY, next_city.id) is not None:
+            return None
+
+        await self._uow.progress.create(
+            Progress(user_id=user.id, entity_type=ProgressType.CITY, entity_id=next_city.id, status=QuestStatus.IN_PROGRESS)
+        )
+        await notify(
+            self._uow,
+            user.id,
+            NotificationType.CITY_UNLOCKED,
+            resolved_language,
+            entity_type="city",
+            entity_id=next_city.id,
+            title=resolve_localized(next_city, "name", resolved_language),
+        )
+        return CitySummaryResponse(
+            id=next_city.id,
+            name=resolve_localized(next_city, "name", resolved_language),
+            slug=next_city.slug,
+            historical_period=resolve_localized(next_city, "historical_period", resolved_language),
+            latitude=next_city.latitude,
+            longitude=next_city.longitude,
+            image_url=next_city.image_url,
+            sort_order=next_city.sort_order,
+            is_unlocked=True,
         )
 
     async def claim_daily_login(self, user: User) -> DailyLoginResponse:

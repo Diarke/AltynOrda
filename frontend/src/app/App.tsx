@@ -12,6 +12,8 @@ import {
   useCities,
   useCity,
   useCityGallery,
+  useGroup,
+  useGroups,
   useHomepageContent,
   useNotifications,
   useProgress,
@@ -29,22 +31,27 @@ import {
   ShoppingBag, Globe, Settings, User, ArrowRight, Play,
   Send, X, Menu, ChevronDown, Shield, Crown, BookOpen, Clock,
   MapPin, Download, Share2, Check, ChevronLeft, Star, Eye, Mountain,
-  Volume2, TrendingUp, Wind, Zap, Feather, LogOut, Camera, Bell
+  Volume2, TrendingUp, Wind, Zap, Feather, LogOut, Camera, Bell, Coins,
+  Users, Copy, Trophy, Plus
 } from "lucide-react";
 import { GLOBAL_CSS } from "./styles/globalCss";
 import { GlobalSearchTrigger } from "./components/GlobalSearch";
 import { NotificationBell, TYPE_ICON, TYPE_TARGET, formatRelativeTime } from "./components/NotificationCenter";
 import { useActiveCity } from "./context/ActiveCityContext";
+import mapBackground from "../assets/map-golden-horde.png";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type View = "landing" | "chars" | "intro" | "auth" | "dashboard" | "city" | "ai" | "artifacts" | "quests" | "certificate" | "passport" | "notifications" | "privacy" | "terms" | "contacts";
+type View = "landing" | "chars" | "intro" | "auth" | "dashboard" | "city" | "ai" | "artifacts" | "quests" | "certificate" | "passport" | "notifications" | "privacy" | "terms" | "contacts" | "groups" | "group" | "join";
 type CharType = "merchant" | "diplomat" | "explorer";
 
 // ─── Route access control ──────────────────────────────────────────────────────
 // Protected: require an authenticated session. Guest-only: only for signed-out
 // visitors (e.g. redirect an already-logged-in user away from the auth screen).
 // Admin: reserved for admin-only views (none exist yet in this app).
-const PROTECTED_VIEWS: View[] = ["dashboard", "city", "ai", "artifacts", "quests", "certificate", "passport", "notifications"];
+// "join" is intentionally NOT protected — an invite link (?code=...) needs to
+// stay reachable while signed out; JoinPage itself prompts to sign in rather
+// than losing the code to a forced redirect to /auth.
+const PROTECTED_VIEWS: View[] = ["dashboard", "city", "ai", "artifacts", "quests", "certificate", "passport", "notifications", "groups", "group"];
 const GUEST_ONLY_VIEWS: View[] = ["auth"];
 const ADMIN_VIEWS: View[] = [];
 
@@ -58,7 +65,7 @@ function resolveView(target: View, isAuthenticated: boolean, role: string | null
 // ─── URL routing ──────────────────────────────────────────────────────────────
 // Every view maps to a real URL so the browser's history/back-button and page
 // refreshes reflect actual app state instead of an in-memory-only view switch.
-const VIEW_PATHS: Record<Exclude<View, "city">, string> = {
+const VIEW_PATHS: Record<Exclude<View, "city" | "group">, string> = {
   landing: "/",
   chars: "/characters",
   intro: "/intro",
@@ -73,15 +80,19 @@ const VIEW_PATHS: Record<Exclude<View, "city">, string> = {
   privacy: "/privacy",
   terms: "/terms",
   contacts: "/contacts",
+  groups: "/ordas",
+  join: "/join",
 };
 
-function pathForView(v: View, cityId?: string | null): string {
-  if (v === "city") return cityId ? `/city/${cityId}` : VIEW_PATHS.dashboard;
+function pathForView(v: View, entityId?: string | null): string {
+  if (v === "city") return entityId ? `/city/${entityId}` : VIEW_PATHS.dashboard;
+  if (v === "group") return entityId ? `/orda/${entityId}` : VIEW_PATHS.groups;
   return VIEW_PATHS[v];
 }
 
 function viewForPathname(pathname: string): View {
   if (pathname.startsWith("/city/")) return "city";
+  if (pathname.startsWith("/orda/")) return "group";
   const match = (Object.entries(VIEW_PATHS) as [View, string][]).find(([, path]) => path === pathname);
   return match ? match[0] : "landing";
 }
@@ -91,12 +102,22 @@ function cityIdFromPathname(pathname: string): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+function groupIdFromPathname(pathname: string): string | null {
+  const match = pathname.match(/^\/orda\/([^/]+)\/?$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 interface City {
   id: string; slug: string; name: string; subtitle: string;
   cx: number; cy: number;
   description: string; founded: string; population: string;
   facts: string[]; importance: string; tradeInfo: string | null;
   color: string; size: number;
+  sortOrder: number;
+  imageUrl: string | null;
+  // null when there's no signed-in user to evaluate journey progress against
+  // (e.g. the anonymous landing-page map preview) — treated as unlocked.
+  isUnlocked: boolean | null;
 }
 
 interface Artifact {
@@ -111,9 +132,10 @@ interface Artifact {
 // lat/lng — including ones an admin adds later — projects into the map from
 // this box; there is no per-city hardcoded position anymore.
 const MAP_GEO_BOUNDS = { minLng: 33, maxLng: 71, minLat: 41, maxLat: 57 };
-// Usable interior of the `viewBox="0 0 900 480"` SVG, leaving margin for the
-// title text, compass rose (top-right), and scale bar (bottom-left).
-const MAP_PIXEL_BOUNDS = { left: 110, right: 770, top: 100, bottom: 420 };
+// Calibrated against the highlighted Golden Horde territory in the reference
+// background image (src/assets/map-golden-horde.png) so markers land inside
+// the illustrated territory rather than the old procedural map's shape.
+const MAP_PIXEL_BOUNDS = { left: 280, right: 770, top: 65, bottom: 365 };
 
 function projectLatLng(lat: number, lng: number): { cx: number; cy: number } {
   const { minLng, maxLng, minLat, maxLat } = MAP_GEO_BOUNDS;
@@ -159,14 +181,32 @@ function resolveMarkerOverlaps<T extends { cx: number; cy: number }>(points: T[]
 // by slug like before — the Golden Horde's own capital reads as the largest gold
 // dot, other capitals/hubs as bronze, everything else as silver.
 const CITY_TIERS: Record<string, { color: string; size: number }> = {
-  "sarai-batu": { color: "#D4AF37", size: 10 },
-  "sarayshyk": { color: "#C9962C", size: 7 },
-  "otrar": { color: "#C9962C", size: 7 },
-  "sygnak": { color: "#B7BAC3", size: 6 },
-  "bolgar": { color: "#B7BAC3", size: 6 },
-  "crimea": { color: "#B7BAC3", size: 6 },
+  "sarai-batu": { color: "#B8892B", size: 10 },
+  "sarayshyk": { color: "#8C6239", size: 7 },
+  "otrar": { color: "#8C6239", size: 7 },
+  "sygnak": { color: "#5C4E38", size: 6 },
+  "bolgar": { color: "#5C4E38", size: 6 },
+  "crimea": { color: "#5C4E38", size: 6 },
 };
-const DEFAULT_CITY_TIER = { color: "#B7BAC3", size: 6 };
+const DEFAULT_CITY_TIER = { color: "#5C4E38", size: 6 };
+
+// Hand-placed against the actual background image (src/assets/map-golden-horde.png)
+// rather than derived from the generic lat/lng projection below — the six launch
+// cities' real historical relative positions (Sarai-Batu on the lower Volga near
+// the Caspian, Bolgar upriver from it, Sarayshyk on the Ural, Otrar/Sygnak along
+// the Syr Darya corridor with Otrar the more southwesterly of the two, Crimea on
+// the peninsula west of Sarai-Batu) mapped onto where those rivers/coastlines
+// actually fall in this specific illustration, clear of the mountain shading in
+// the southeast corner. Percentages are of the map image's own bounds — any city
+// without a curated slug here still falls back to `projectLatLng`.
+const CITY_MAP_POSITIONS: Record<string, { left: number; top: number }> = {
+  "sarai-batu": { left: 44, top: 52 },
+  "bolgar": { left: 51, top: 21 },
+  "sarayshyk": { left: 58, top: 40 },
+  "otrar": { left: 66, top: 54 },
+  "sygnak": { left: 74, top: 44 },
+  "crimea": { left: 17, top: 57 },
+};
 
 function mapApiCity(city: ApiCity, t: TFunction): City {
   // The 6 launch cities have curated map styling (tier) and a translated one-line
@@ -174,7 +214,10 @@ function mapApiCity(city: ApiCity, t: TFunction): City {
   // colors/size and its real historical_period instead of a missing translation key.
   const isCuratedCity = Boolean(CITY_TIERS[city.slug]);
   const tier = CITY_TIERS[city.slug] || DEFAULT_CITY_TIER;
-  const { cx, cy } = projectLatLng(city.latitude, city.longitude);
+  const curatedPosition = CITY_MAP_POSITIONS[city.slug];
+  const { cx, cy } = curatedPosition
+    ? { cx: (curatedPosition.left / 100) * 900, cy: (curatedPosition.top / 100) * 480 }
+    : projectLatLng(city.latitude, city.longitude);
   const subtitle = isCuratedCity ? t(`map.citySubtitles.${city.slug}`) : city.historical_period;
 
   return {
@@ -192,6 +235,9 @@ function mapApiCity(city: ApiCity, t: TFunction): City {
     tradeInfo: city.trade_info ?? null,
     color: tier.color,
     size: tier.size,
+    sortOrder: city.sort_order,
+    imageUrl: city.image_url ?? null,
+    isUnlocked: city.is_unlocked,
   };
 }
 
@@ -217,6 +263,19 @@ const JOURNEY_ROUTE_ORDER: Record<CharType, string[]> = {
   merchant: ["sarai-batu", "sarayshyk", "otrar", "crimea"],
   explorer: ["otrar", "bolgar", "sygnak", "sarayshyk"],
 };
+
+// The caravan network as drawn when no single character journey is active (e.g.
+// the anonymous landing-page map preview) — a fixed historical trade-route
+// topology rather than a per-character subset, so the map reads as one coherent
+// network: the Syr Darya corridor (Sygnak-Otrar-Sarayshyk) feeding the capital,
+// which in turn connects north up the Volga to Bolgar and west to Crimea.
+const WORLD_ROUTE_EDGES: [string, string][] = [
+  ["sygnak", "otrar"],
+  ["otrar", "sarayshyk"],
+  ["sarayshyk", "sarai-batu"],
+  ["sarai-batu", "bolgar"],
+  ["sarai-batu", "crimea"],
+];
 
 function citiesForJourney(cities: City[], journey: CharType | undefined): City[] {
   if (!journey) return cities;
@@ -295,7 +354,7 @@ function getCharacterData(t: TFunction) {
       description: t("chars.merchant.description"),
       icon: ShoppingBag,
       traits: t("chars.merchant.traits", { returnObjects: true }) as string[],
-      color: "#D4AF37",
+      color: "#B8892B",
     },
     diplomat: {
       name: t("chars.diplomat.name"),
@@ -304,7 +363,7 @@ function getCharacterData(t: TFunction) {
       description: t("chars.diplomat.description"),
       icon: ScrollText,
       traits: t("chars.diplomat.traits", { returnObjects: true }) as string[],
-      color: "#57D6D1",
+      color: "#6B8CA3",
     },
     explorer: {
       name: t("chars.explorer.name"),
@@ -313,7 +372,7 @@ function getCharacterData(t: TFunction) {
       description: t("chars.explorer.description"),
       icon: Compass,
       traits: t("chars.explorer.traits", { returnObjects: true }) as string[],
-      color: "#6FCF97",
+      color: "#7C8B5A",
     },
   };
 }
@@ -341,7 +400,7 @@ function DustParticles() {
             bottom: `${Math.random() * 40}%`,
             width: p.size,
             height: p.size,
-            background: `rgba(212,175,55,${p.opacity})`,
+            background: `rgba(184,137,43,${p.opacity})`,
             animationDuration: `${p.duration}s`,
             animationDelay: `${p.delay}s`,
           }}
@@ -354,9 +413,9 @@ function DustParticles() {
 function RarityBadge({ rarity }: { rarity: Artifact["rarity"] }) {
   const { t } = useTranslation();
   const map = {
-    legendary: ["#D4AF37", t("common.rarity.legendary")],
-    rare: ["#57D6D1", t("common.rarity.rare")],
-    common: ["#B7BAC3", t("common.rarity.common")],
+    legendary: ["#B8892B", t("common.rarity.legendary")],
+    rare: ["#8A9199", t("common.rarity.rare")],
+    common: ["#8C6239", t("common.rarity.common")],
   };
   const [color, label] = map[rarity];
   return (
@@ -372,8 +431,8 @@ function ProgressRing({ value, size = 64, stroke = 5 }: { value: number; size?: 
   const circ = 2 * Math.PI * r;
   return (
     <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#D4AF37" strokeWidth={stroke}
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(59,42,19,0.06)" strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#B8892B" strokeWidth={stroke}
         strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - value / 100)}
         style={{ transition: "stroke-dashoffset 1.2s cubic-bezier(0.22,1,0.36,1)" }} />
     </svg>
@@ -393,13 +452,13 @@ function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
 
   return (
     <div className={`flex items-center gap-1 ${compact ? "" : "rounded-full"}`}
-      style={compact ? {} : { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", padding: "3px" }}>
+      style={compact ? {} : { background: "rgba(59,42,19,0.04)", border: "1px solid rgba(59,42,19,0.06)", padding: "3px" }}>
       {SUPPORTED_LANGUAGES.map((lng) => (
         <button key={lng} onClick={() => changeLanguage(lng)}
           className="px-2 py-1 rounded-full text-[10px] font-semibold orda-cinzel tracking-wider transition-colors"
           style={{
-            background: active === lng ? "rgba(212,175,55,0.15)" : "transparent",
-            color: active === lng ? "#D4AF37" : "#B7BAC3",
+            background: active === lng ? "rgba(184,137,43,0.15)" : "transparent",
+            color: active === lng ? "#B8892B" : "#5C4E38",
           }}>
           {lng.toUpperCase()}
         </button>
@@ -432,7 +491,7 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
     return () => window.removeEventListener("scroll", h);
   }, []);
 
-  const inApp = ["dashboard", "city", "ai", "artifacts", "quests", "certificate", "passport", "notifications"].includes(view);
+  const inApp = ["dashboard", "city", "ai", "artifacts", "quests", "certificate", "passport", "notifications", "groups", "group", "join"].includes(view);
 
   // Highlight the section currently in view while scrolling the landing page.
   useEffect(() => {
@@ -478,7 +537,7 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
   };
 
   const navLinks: [string, View][] = [
-    [t("nav.journey"), "dashboard"], [t("nav.map"), "dashboard"], [t("nav.artifacts"), "artifacts"], [t("nav.aiHistorian"), "ai"],
+    [t("nav.journey"), "dashboard"], [t("nav.map"), "dashboard"], [t("nav.artifacts"), "artifacts"], [t("nav.aiHistorian"), "ai"], [t("nav.ordas"), "groups"],
   ];
   const sectionLinks: [string, string][] = [
     [t("nav.journey"), "journey-section"], [t("nav.map"), "map-section"], [t("nav.artifacts"), "artifacts-section"],
@@ -487,34 +546,34 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 transition-all duration-500"
-      style={{ background: scrolled || inApp ? "rgba(15,17,21,0.92)" : "transparent", backdropFilter: scrolled || inApp ? "blur(20px)" : "none", borderBottom: scrolled || inApp ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+      style={{ background: scrolled || inApp ? "#E6D8B8" : "transparent", borderBottom: scrolled || inApp ? "1px solid rgba(59,42,19,0.18)" : "none" }}>
       <div className="max-w-[1440px] mx-auto px-6 lg:px-12 h-16 flex items-center justify-between">
         <button onClick={scrollToTop} className="nav-link flex items-center gap-3 group">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)" }}>
-            <span className="text-[#0F1115] font-bold text-sm orda-cinzel">O</span>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#B8892B,#8C6239)" }}>
+            <span className="text-[#EDE1C4] font-bold text-sm orda-cinzel">O</span>
           </div>
-          <span className="text-lg font-bold orda-cinzel tracking-[0.2em] text-[#D4AF37]">ORDA</span>
+          <span className="text-lg font-bold orda-cinzel tracking-[0.2em] text-[#B8892B]">ORDA</span>
         </button>
 
         <div className="hidden md:flex items-center gap-8">
           {inApp && navLinks.map(([label, target]) => (
             <button key={label} onClick={() => onNav(target)}
               className="nav-link text-sm orda-cinzel tracking-widest transition-colors duration-200"
-              style={{ color: view === target ? "#D4AF37" : "#B7BAC3" }}
-              onMouseEnter={e => { if (view !== target) (e.target as HTMLElement).style.color = "#F6F4EC"; }}
-              onMouseLeave={e => { if (view !== target) (e.target as HTMLElement).style.color = "#B7BAC3"; }}>
+              style={{ color: view === target ? "#B8892B" : "#5C4E38" }}
+              onMouseEnter={e => { if (view !== target) (e.target as HTMLElement).style.color = "#2E2013"; }}
+              onMouseLeave={e => { if (view !== target) (e.target as HTMLElement).style.color = "#5C4E38"; }}>
               {label}
             </button>
           ))}
           {!inApp && sectionLinks.map(([label, id]) => (
             <button key={id} onClick={() => goToSection(id)}
               className="nav-link relative text-sm orda-cinzel tracking-widest transition-colors duration-200 pb-1"
-              style={{ color: activeSection === id ? "#D4AF37" : "#B7BAC3" }}
-              onMouseEnter={e => { if (activeSection !== id) (e.target as HTMLElement).style.color = "#F6F4EC"; }}
-              onMouseLeave={e => { if (activeSection !== id) (e.target as HTMLElement).style.color = "#B7BAC3"; }}>
+              style={{ color: activeSection === id ? "#B8892B" : "#5C4E38" }}
+              onMouseEnter={e => { if (activeSection !== id) (e.target as HTMLElement).style.color = "#2E2013"; }}
+              onMouseLeave={e => { if (activeSection !== id) (e.target as HTMLElement).style.color = "#5C4E38"; }}>
               {label}
               <span className="absolute left-0 right-0 -bottom-0.5 h-px rounded-full transition-all duration-300"
-                style={{ background: activeSection === id ? "#D4AF37" : "transparent", boxShadow: activeSection === id ? "0 0 8px rgba(212,175,55,0.6)" : "none" }} />
+                style={{ background: activeSection === id ? "#B8892B" : "transparent", boxShadow: activeSection === id ? "0 0 8px rgba(184,137,43,0.6)" : "none" }} />
             </button>
           ))}
         </div>
@@ -532,8 +591,8 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
               href="/admin"
               title={t("nav.admin")}
               className="nav-link w-9 h-9 rounded-full flex items-center justify-center transition-colors"
-              style={{ background: "rgba(212,175,55,0.12)", border: "1px solid rgba(212,175,55,0.25)" }}>
-              <Shield size={15} color="#D4AF37" />
+              style={{ background: "rgba(184,137,43,0.12)", border: "1px solid rgba(184,137,43,0.25)" }}>
+              <Shield size={15} color="#B8892B" />
             </a>
           )}
           {isAuthenticated ? (
@@ -541,7 +600,7 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
               onClick={() => onNav("passport")}
               title={user ? `${user.username} · ${t("nav.passport")}` : t("nav.passport")}
               className="nav-link w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold orda-cinzel overflow-hidden"
-              style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)", color: "#0F1115" }}>
+              style={{ background: "linear-gradient(135deg,#B8892B,#8C6239)", color: "#EDE1C4" }}>
               {user?.avatar_url ? (
                 <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
               ) : (
@@ -554,29 +613,29 @@ function NavBar({ view, onNav }: { view: View; onNav: (v: View) => void }) {
             </button>
           )}
           <button className="nav-link md:hidden" aria-label={menuOpen ? t("nav.closeMenu") : t("nav.openMenu")} onClick={() => setMenuOpen(!menuOpen)}>
-            <Menu size={20} color="#F6F4EC" />
+            <Menu size={20} color="#2E2013" />
           </button>
         </div>
       </div>
       {menuOpen && (
-        <div className="md:hidden glass-dark border-t border-white/5 px-6 py-4 flex flex-col gap-4">
+        <div className="md:hidden glass-dark border-t border-[rgba(59,42,19,0.15)] px-6 py-4 flex flex-col gap-4">
           {inApp
             ? navLinks.map(([label, target]) => (
               <button key={label} className="nav-link text-sm orda-cinzel tracking-widest text-left"
-                style={{ color: view === target ? "#D4AF37" : "#B7BAC3" }}
+                style={{ color: view === target ? "#B8892B" : "#5C4E38" }}
                 onClick={() => { onNav(target); setMenuOpen(false); }}>
                 {label}
               </button>
             ))
             : sectionLinks.map(([label, id]) => (
               <button key={id} className="nav-link text-sm orda-cinzel tracking-widest text-left"
-                style={{ color: activeSection === id ? "#D4AF37" : "#B7BAC3" }}
+                style={{ color: activeSection === id ? "#B8892B" : "#5C4E38" }}
                 onClick={() => goToSection(id)}>
                 {label}
               </button>
             ))}
           {isAuthenticated && user?.role === "admin" && (
-            <a href="/admin" className="nav-link text-sm orda-cinzel tracking-widest text-left" style={{ color: "#D4AF37" }}>
+            <a href="/admin" className="nav-link text-sm orda-cinzel tracking-widest text-left" style={{ color: "#B8892B" }}>
               {t("nav.admin")}
             </a>
           )}
@@ -597,65 +656,51 @@ function Landing({ onStart }: { onStart: () => void }) {
     <div className="relative w-full min-h-screen overflow-hidden flex flex-col">
       {/* Sky & Steppe Background */}
       <div className="absolute inset-0" style={{
-        background: "linear-gradient(180deg, #080A0F 0%, #0D1018 18%, #141820 35%, #1A1C14 55%, #2A2210 70%, #1A1408 82%, #0F1115 100%)"
+        background: "linear-gradient(180deg, #D8C79C 0%, #DCCBA0 18%, #DCCBA0 35%, #DCCBA0 55%, #D8C79C 70%, #3B2A1A 82%, #EDE1C4 100%)"
       }} />
-
-      {/* Stars */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {Array.from({ length: 80 }, (_, i) => (
-          <div key={i} className="absolute rounded-full"
-            style={{
-              left: `${Math.random() * 100}%`, top: `${Math.random() * 55}%`,
-              width: Math.random() * 2 + 0.5, height: Math.random() * 2 + 0.5,
-              background: "rgba(246,244,236,0.6)",
-              animation: `star-twinkle ${Math.random() * 4 + 2}s ease-in-out ${Math.random() * 5}s infinite`,
-            }}
-          />
-        ))}
-      </div>
 
       {/* Horizon glow — golden sunset */}
       <div className="absolute bottom-0 left-0 right-0 h-[40%]" style={{
-        background: "linear-gradient(0deg, rgba(212,175,55,0.08) 0%, rgba(180,100,20,0.05) 40%, transparent 100%)"
+        background: "linear-gradient(0deg, rgba(184,137,43,0.1) 0%, rgba(180,100,20,0.06) 40%, transparent 100%)"
       }} />
 
-      {/* Mountain silhouettes */}
+      {/* Mountain silhouettes — ink-wash hills */}
       <svg className="absolute bottom-[14%] left-0 right-0 w-full" viewBox="0 0 1440 220" preserveAspectRatio="none">
         <path d="M0,220 L0,160 L80,90 L160,130 L260,50 L380,110 L480,60 L560,100 L660,30 L760,95 L860,55 L960,120 L1060,70 L1180,110 L1280,60 L1380,100 L1440,80 L1440,220 Z"
-          fill="rgba(8,10,16,0.95)" />
+          fill="rgba(59,42,19,0.85)" />
         <path d="M0,220 L0,175 L100,130 L200,155 L320,105 L440,145 L560,120 L680,155 L800,115 L920,148 L1040,125 L1160,150 L1280,130 L1440,155 L1440,220 Z"
-          fill="rgba(10,12,18,0.98)" />
+          fill="rgba(46,32,19,0.92)" />
       </svg>
 
       {/* Steppe ground */}
       <div className="absolute bottom-0 left-0 right-0 h-[14%]" style={{
-        background: "linear-gradient(180deg,rgba(20,18,12,0.0) 0%,rgba(15,17,21,1) 100%)"
+        background: "linear-gradient(180deg,rgba(59,42,19,0) 0%,rgba(230,216,184,1) 100%)"
       }} />
 
       {/* Horse riders silhouette */}
       <svg className="absolute bottom-[13.5%] right-[8%] opacity-30" viewBox="0 0 300 80" width="220">
         {/* Rider 1 */}
-        <ellipse cx="40" cy="55" rx="22" ry="10" fill="#1A1408" />
-        <rect x="32" y="28" width="16" height="24" rx="3" fill="#1A1408" />
-        <circle cx="40" cy="22" r="8" fill="#1A1408" />
-        <line x1="56" y1="42" x2="72" y2="50" stroke="#1A1408" strokeWidth="3" />
+        <ellipse cx="40" cy="55" rx="22" ry="10" fill="#3B2A1A" />
+        <rect x="32" y="28" width="16" height="24" rx="3" fill="#3B2A1A" />
+        <circle cx="40" cy="22" r="8" fill="#3B2A1A" />
+        <line x1="56" y1="42" x2="72" y2="50" stroke="#3B2A1A" strokeWidth="3" />
         {/* Rider 2 */}
-        <ellipse cx="110" cy="58" rx="18" ry="8" fill="#1A1408" />
-        <rect x="103" y="34" width="14" height="20" rx="3" fill="#1A1408" />
-        <circle cx="110" cy="28" r="7" fill="#1A1408" />
+        <ellipse cx="110" cy="58" rx="18" ry="8" fill="#3B2A1A" />
+        <rect x="103" y="34" width="14" height="20" rx="3" fill="#3B2A1A" />
+        <circle cx="110" cy="28" r="7" fill="#3B2A1A" />
         {/* Rider 3 */}
-        <ellipse cx="180" cy="56" rx="20" ry="9" fill="#1A1408" />
-        <rect x="172" y="31" width="15" height="22" rx="3" fill="#1A1408" />
-        <circle cx="180" cy="25" r="7.5" fill="#1A1408" />
-        <line x1="194" y1="38" x2="210" y2="44" stroke="#1A1408" strokeWidth="2.5" />
+        <ellipse cx="180" cy="56" rx="20" ry="9" fill="#3B2A1A" />
+        <rect x="172" y="31" width="15" height="22" rx="3" fill="#3B2A1A" />
+        <circle cx="180" cy="25" r="7.5" fill="#3B2A1A" />
+        <line x1="194" y1="38" x2="210" y2="44" stroke="#3B2A1A" strokeWidth="2.5" />
       </svg>
 
       {/* Clouds */}
       <div className="cloud-a absolute top-[8%] left-[5%] pointer-events-none">
-        <div className="w-64 h-16 rounded-full" style={{ background: "radial-gradient(ellipse,rgba(246,244,236,0.04) 0%,transparent 70%)", filter: "blur(20px)" }} />
+        <div className="w-64 h-16 rounded-full" style={{ background: "radial-gradient(ellipse,rgba(255,251,235,0.4) 0%,transparent 70%)", filter: "blur(20px)" }} />
       </div>
       <div className="cloud-b absolute top-[12%] right-[10%] pointer-events-none">
-        <div className="w-96 h-20 rounded-full" style={{ background: "radial-gradient(ellipse,rgba(246,244,236,0.03) 0%,transparent 70%)", filter: "blur(24px)" }} />
+        <div className="w-96 h-20 rounded-full" style={{ background: "radial-gradient(ellipse,rgba(255,251,235,0.32) 0%,transparent 70%)", filter: "blur(24px)" }} />
       </div>
 
       <DustParticles />
@@ -665,28 +710,28 @@ function Landing({ onStart }: { onStart: () => void }) {
         {/* Logo emblem */}
         <div className={`mb-8 transition-all duration-1000 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
           <div className="w-20 h-20 mx-auto mb-6 rounded-2xl flex items-center justify-center relative"
-            style={{ background: "linear-gradient(135deg,rgba(212,175,55,0.12),rgba(201,150,44,0.06))", border: "1px solid rgba(212,175,55,0.25)" }}>
+            style={{ background: "linear-gradient(135deg,rgba(184,137,43,0.12),rgba(140,98,57,0.06))", border: "1px solid rgba(184,137,43,0.25)" }}>
             <div className="animate-pulse-gold absolute inset-0 rounded-2xl" />
-            <span className="orda-cinzel text-3xl font-bold text-[#D4AF37] gold-glow-text relative z-10">✦</span>
+            <span className="orda-cinzel text-3xl font-bold text-[#B8892B] gold-glow-text relative z-10">✦</span>
           </div>
 
           <div className="shimmer-text text-7xl md:text-9xl font-black orda-cinzel tracking-[0.3em] leading-none mb-2">
             ORDA
           </div>
-          <div className="text-[#B7BAC3] text-xs md:text-sm tracking-[0.35em] orda-cinzel uppercase mb-10">
+          <div className="text-[#5C4E38] text-xs md:text-sm tracking-[0.35em] orda-cinzel uppercase mb-10">
             {t("hero.tagline")}
           </div>
         </div>
 
         {/* Divider */}
         <div className={`flex items-center gap-4 mb-10 w-full max-w-sm transition-all duration-1000 delay-200 ${mounted ? "opacity-100" : "opacity-0"}`}>
-          <div className="flex-1 h-px" style={{ background: "linear-gradient(90deg,transparent,rgba(212,175,55,0.3))" }} />
-          <span className="text-[#D4AF37] text-base">⬦</span>
-          <div className="flex-1 h-px" style={{ background: "linear-gradient(90deg,rgba(212,175,55,0.3),transparent)" }} />
+          <div className="flex-1 h-px" style={{ background: "linear-gradient(90deg,transparent,rgba(184,137,43,0.3))" }} />
+          <span className="text-[#B8892B] text-base">⬦</span>
+          <div className="flex-1 h-px" style={{ background: "linear-gradient(90deg,rgba(184,137,43,0.3),transparent)" }} />
         </div>
 
         {/* Description */}
-        <p className={`text-[#B7BAC3] text-base md:text-lg max-w-lg leading-relaxed orda-inter mb-12 transition-all duration-1000 delay-300 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
+        <p className={`text-[#5C4E38] text-base md:text-lg max-w-lg leading-relaxed orda-inter mb-12 transition-all duration-1000 delay-300 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}>
           {t("hero.description")}
         </p>
 
@@ -708,16 +753,16 @@ function Landing({ onStart }: { onStart: () => void }) {
           aria-label={t("hero.scrollDown")}
           className={`nav-link mt-14 flex items-center justify-center rounded-full transition-all duration-1000 delay-700 ${mounted ? "opacity-60 hover:opacity-100" : "opacity-0"}`}
         >
-          <ChevronDown size={22} color="#D4AF37" className="animate-scroll" />
+          <ChevronDown size={22} color="#B8892B" className="animate-scroll" />
         </button>
       </div>
 
       {/* Features strip */}
       <div className="absolute bottom-0 left-0 right-0 h-16 flex items-center justify-center gap-12 border-t"
-        style={{ borderColor: "rgba(255,255,255,0.04)", background: "rgba(15,17,21,0.7)", backdropFilter: "blur(20px)" }}>
+        style={{ borderColor: "rgba(59,42,19,0.15)", background: "rgba(230,216,184,0.92)" }}>
         {[[t("hero.features.cities"), MapPin], [t("hero.features.quests"), Zap], [t("hero.features.aiHistorian"), MessageSquare], [t("hero.features.artifacts"), Package]].map(([label, Icon]) => (
-          <div key={label as string} className="flex items-center gap-2 text-[#B7BAC3] text-sm orda-inter">
-            <Icon size={14} color="#D4AF37" />
+          <div key={label as string} className="flex items-center gap-2 text-[#5C4E38] text-sm orda-inter">
+            <Icon size={14} color="#B8892B" />
             <span>{label as string}</span>
           </div>
         ))}
@@ -771,8 +816,8 @@ function StatCounter({ value, label }: { value: number; label: string }) {
   const count = useCountUp(value, inView);
   return (
     <div ref={ref} className="text-center">
-      <div className="text-4xl md:text-5xl font-black orda-cinzel text-[#D4AF37]">{count}+</div>
-      <div className="text-xs md:text-sm orda-inter text-[#B7BAC3] mt-2 tracking-wide">{label}</div>
+      <div className="text-4xl md:text-5xl font-black orda-cinzel text-[#B8892B]">{count}+</div>
+      <div className="text-xs md:text-sm orda-inter text-[#5C4E38] mt-2 tracking-wide">{label}</div>
     </div>
   );
 }
@@ -787,29 +832,29 @@ function JourneySection() {
     { icon: Zap, title: t("journey.pillars.quest.title"), text: t("journey.pillars.quest.text") },
   ];
   return (
-    <section id="journey-section" ref={parallax.ref} className="relative py-28 md:py-36 overflow-hidden scroll-mt-24" style={{ background: "linear-gradient(180deg, #0F1115 0%, #12141B 100%)" }}>
+    <section id="journey-section" ref={parallax.ref} className="relative py-28 md:py-36 overflow-hidden scroll-mt-24" style={{ background: "linear-gradient(180deg, #EDE1C4 0%, #E6D8B8 100%)" }}>
       <motion.div style={{ y: parallax.y }} className="absolute inset-0 pointer-events-none">
-        <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(212,175,55,0.05) 0%, transparent 60%)" }} />
+        <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(184,137,43,0.05) 0%, transparent 60%)" }} />
       </motion.div>
       <DustParticles />
       <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
         <ScrollReveal>
           <div className="badge-gold mb-6 inline-block">{t("journey.badge")}</div>
-          <h2 className="orda-cinzel text-3xl md:text-5xl font-bold text-[#F6F4EC] mb-6 leading-tight">
+          <h2 className="orda-cinzel text-3xl md:text-5xl font-bold text-[#2E2013] mb-6 leading-tight">
             {t("journey.title1")}<br />{t("journey.title2")}
           </h2>
-          <p className="orda-cormorant text-xl md:text-2xl italic text-[#B7BAC3] max-w-2xl mx-auto leading-relaxed">
+          <p className="orda-cormorant text-xl md:text-2xl italic text-[#5C4E38] max-w-2xl mx-auto leading-relaxed">
             {t("journey.description")}
           </p>
         </ScrollReveal>
         <ScrollReveal delay={0.15} className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-16">
           {pillars.map((item) => (
-            <div key={item.title} className="rounded-[20px] p-7 card-hover gold-hover" style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 mx-auto" style={{ background: "rgba(212,175,55,0.1)", border: "1px solid rgba(212,175,55,0.2)" }}>
-                <item.icon size={20} color="#D4AF37" />
+            <div key={item.title} className="rounded-[20px] p-7 card-hover gold-hover" style={{ background: "rgba(241,233,210,0.5)", border: "1px solid rgba(59,42,19,0.06)" }}>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-4 mx-auto" style={{ background: "rgba(184,137,43,0.1)", border: "1px solid rgba(184,137,43,0.2)" }}>
+                <item.icon size={20} color="#B8892B" />
               </div>
-              <h3 className="orda-cinzel text-base font-semibold text-[#F6F4EC] mb-2">{item.title}</h3>
-              <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed">{item.text}</p>
+              <h3 className="orda-cinzel text-base font-semibold text-[#2E2013] mb-2">{item.title}</h3>
+              <p className="orda-inter text-sm text-[#5C4E38] leading-relaxed">{item.text}</p>
             </div>
           ))}
         </ScrollReveal>
@@ -822,28 +867,28 @@ function TimelineSection() {
   const { t } = useTranslation();
   const events = t("timeline.events", { returnObjects: true }) as { year: string; text: string }[];
   return (
-    <section className="relative py-28 md:py-36" style={{ background: "#0D0F15" }}>
+    <section className="relative py-28 md:py-36" style={{ background: "#DCCBA0" }}>
       <div className="max-w-3xl mx-auto px-6">
         <ScrollReveal className="text-center mb-16">
           <div className="badge-gold mb-4 inline-block">{t("timeline.badge")}</div>
-          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC]">{t("timeline.title")}</h2>
+          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#2E2013]">{t("timeline.title")}</h2>
         </ScrollReveal>
         <div className="relative">
           <div className="absolute left-[84px] top-0 bottom-0 w-px hidden sm:block"
-            style={{ background: "linear-gradient(180deg, transparent, rgba(212,175,55,0.3) 8%, rgba(212,175,55,0.3) 92%, transparent)" }} />
+            style={{ background: "linear-gradient(180deg, transparent, rgba(184,137,43,0.3) 8%, rgba(184,137,43,0.3) 92%, transparent)" }} />
           <div className="space-y-8">
             {events.map((item, i) => (
               <ScrollReveal key={item.year} delay={i * 0.05}>
                 <div className="flex items-start gap-6">
                   <div className="w-20 flex-shrink-0 text-right pt-4 hidden sm:block">
-                    <span className="orda-cinzel text-sm font-semibold text-[#D4AF37]">{item.year}</span>
+                    <span className="orda-cinzel text-sm font-semibold text-[#B8892B]">{item.year}</span>
                   </div>
                   <div className="relative flex-shrink-0 hidden sm:block pt-5">
-                    <div className="w-3 h-3 rounded-full border-2 border-[#D4AF37]" style={{ background: "#0D0F15", boxShadow: "0 0 10px rgba(212,175,55,0.4)" }} />
+                    <div className="w-3 h-3 rounded-full border-2 border-[#B8892B]" style={{ background: "#DCCBA0", boxShadow: "0 0 10px rgba(184,137,43,0.4)" }} />
                   </div>
-                  <div className="flex-1 rounded-[16px] p-5" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                    <div className="sm:hidden orda-cinzel text-sm font-semibold text-[#D4AF37] mb-1">{item.year}</div>
-                    <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed">{item.text}</p>
+                  <div className="flex-1 rounded-[16px] p-5" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                    <div className="sm:hidden orda-cinzel text-sm font-semibold text-[#B8892B] mb-1">{item.year}</div>
+                    <p className="orda-inter text-sm text-[#5C4E38] leading-relaxed">{item.text}</p>
                   </div>
                 </div>
               </ScrollReveal>
@@ -862,23 +907,23 @@ function MapPreviewSection({ onExplore }: { onExplore: () => void }) {
   const parallax = useParallaxY(40);
 
   return (
-    <section id="map-section" ref={parallax.ref} className="relative py-28 md:py-36 overflow-hidden scroll-mt-24" style={{ background: "linear-gradient(180deg, #0D0F15 0%, #12141B 100%)" }}>
+    <section id="map-section" ref={parallax.ref} className="relative py-28 md:py-36 overflow-hidden scroll-mt-24" style={{ background: "linear-gradient(180deg, #DCCBA0 0%, #E6D8B8 100%)" }}>
       <motion.div style={{ y: parallax.y }} className="absolute inset-0 pointer-events-none">
-        <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 60%, rgba(212,175,55,0.04) 0%, transparent 65%)" }} />
+        <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 60%, rgba(184,137,43,0.04) 0%, transparent 65%)" }} />
       </motion.div>
       <div className="relative z-10 max-w-5xl mx-auto px-6">
         <ScrollReveal className="text-center mb-12">
           <div className="badge-gold mb-4 inline-block">{t("mapPreview.badge")}</div>
-          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC] mb-4">{t("mapPreview.title")}</h2>
-          <p className="orda-inter text-[#B7BAC3] max-w-xl mx-auto">
+          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#2E2013] mb-4">{t("mapPreview.title")}</h2>
+          <p className="orda-inter text-[#5C4E38] max-w-xl mx-auto">
             {t("mapPreview.description")}
           </p>
         </ScrollReveal>
         <ScrollReveal delay={0.15}>
-          <div className="rounded-[24px] p-3 md:p-5" style={{ background: "rgba(23,26,32,0.6)", border: "1px solid rgba(212,175,55,0.12)" }}>
+          <div className="rounded-[24px] p-3 md:p-5" style={{ background: "rgba(241,233,210,0.6)", border: "1px solid rgba(184,137,43,0.12)" }}>
             <div className="h-[380px] md:h-[460px]">
               {isLoading ? (
-                <div className="w-full h-full rounded-[16px]" style={{ background: "rgba(255,255,255,0.03)" }} />
+                <div className="w-full h-full rounded-[16px]" style={{ background: "rgba(59,42,19,0.03)" }} />
               ) : (
                 <InteractiveMap cities={cities} onSelectCity={onExplore} />
               )}
@@ -897,28 +942,28 @@ function CitiesPreviewSection({ onExplore }: { onExplore: () => void }) {
   const items: (City | null)[] = isLoading ? Array.from({ length: 6 }, () => null) : cities;
 
   return (
-    <section className="relative py-28 md:py-36" style={{ background: "#12141B" }}>
+    <section className="relative py-28 md:py-36" style={{ background: "#E6D8B8" }}>
       <div className="max-w-6xl mx-auto px-6">
         <ScrollReveal className="text-center mb-14">
           <div className="badge-gold mb-4 inline-block">{t("citiesPreview.badge")}</div>
-          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC]">{t("citiesPreview.title")}</h2>
+          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#2E2013]">{t("citiesPreview.title")}</h2>
         </ScrollReveal>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {items.map((city, i) => (
             <ScrollReveal key={city?.id ?? `city-skeleton-${i}`} delay={i * 0.06}>
               {!city ? (
-                <div className="rounded-[20px] h-40" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }} />
+                <div className="rounded-[20px] h-40" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }} />
               ) : (
                 <div onClick={onExplore} className="rounded-[20px] p-6 cursor-pointer card-hover gold-hover h-40 flex flex-col justify-between"
-                  style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  style={{ background: "rgba(241,233,210,0.5)", border: "1px solid rgba(59,42,19,0.06)" }}>
                   <div>
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-3" style={{ background: "rgba(212,175,55,0.1)", border: `1px solid ${city.color}40` }}>
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-3" style={{ background: "rgba(184,137,43,0.1)", border: `1px solid ${city.color}40` }}>
                       <MapPin size={15} color={city.color} />
                     </div>
-                    <h3 className="orda-cinzel text-base font-semibold text-[#F6F4EC]">{city.name}</h3>
-                    <p className="orda-inter text-xs text-[#B7BAC3] mt-1">{city.subtitle}</p>
+                    <h3 className="orda-cinzel text-base font-semibold text-[#2E2013]">{city.name}</h3>
+                    <p className="orda-inter text-xs text-[#5C4E38] mt-1">{city.subtitle}</p>
                   </div>
-                  <span className="text-[10px] orda-cinzel tracking-widest text-[#D4AF37]">{city.founded}</span>
+                  <span className="text-[10px] orda-cinzel tracking-widest text-[#B8892B]">{city.founded}</span>
                 </div>
               )}
             </ScrollReveal>
@@ -932,12 +977,12 @@ function CitiesPreviewSection({ onExplore }: { onExplore: () => void }) {
 function AIHistorianPreviewSection({ onExplore }: { onExplore: () => void }) {
   const { t } = useTranslation();
   return (
-    <section id="ai-historian-section" className="relative py-28 md:py-36 overflow-hidden scroll-mt-24" style={{ background: "linear-gradient(180deg, #12141B 0%, #0F1115 100%)" }}>
+    <section id="ai-historian-section" className="relative py-28 md:py-36 overflow-hidden scroll-mt-24" style={{ background: "linear-gradient(180deg, #E6D8B8 0%, #EDE1C4 100%)" }}>
       <div className="max-w-4xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
         <ScrollReveal>
           <div className="badge-teal mb-4 inline-block">{t("aiPreview.badge")}</div>
-          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC] mb-5">{t("aiPreview.title")}</h2>
-          <p className="orda-inter text-[#B7BAC3] leading-relaxed mb-6">
+          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#2E2013] mb-5">{t("aiPreview.title")}</h2>
+          <p className="orda-inter text-[#5C4E38] leading-relaxed mb-6">
             {t("aiPreview.description")}
           </p>
           <button onClick={onExplore} className="btn-teal flex items-center gap-2">
@@ -945,20 +990,20 @@ function AIHistorianPreviewSection({ onExplore }: { onExplore: () => void }) {
           </button>
         </ScrollReveal>
         <ScrollReveal delay={0.15}>
-          <div className="rounded-[20px] p-6 space-y-4" style={{ background: "rgba(23,26,32,0.8)", border: "1px solid rgba(87,214,209,0.15)" }}>
+          <div className="rounded-[20px] p-6 space-y-4" style={{ background: "rgba(241,233,210,0.8)", border: "1px solid rgba(107,140,163,0.15)" }}>
             <div className="flex justify-end">
               <div className="max-w-[80%] rounded-[16px] rounded-tr-[4px] px-4 py-3"
-                style={{ background: "linear-gradient(135deg, rgba(212,175,55,0.15), rgba(212,175,55,0.08))", border: "1px solid rgba(212,175,55,0.2)" }}>
-                <p className="orda-inter text-sm text-[#F6F4EC]">{t("aiPreview.sampleQuestion")}</p>
+                style={{ background: "linear-gradient(135deg, rgba(184,137,43,0.15), rgba(184,137,43,0.08))", border: "1px solid rgba(184,137,43,0.2)" }}>
+                <p className="orda-inter text-sm text-[#2E2013]">{t("aiPreview.sampleQuestion")}</p>
               </div>
             </div>
             <div className="flex justify-start gap-3">
               <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: "rgba(87,214,209,0.12)", border: "1px solid rgba(87,214,209,0.2)" }}>
+                style={{ background: "rgba(107,140,163,0.12)", border: "1px solid rgba(107,140,163,0.2)" }}>
                 <span className="text-sm">⚜</span>
               </div>
-              <div className="max-w-[85%] rounded-[16px] rounded-tl-[4px] px-4 py-3" style={{ background: "rgba(34,38,47,0.7)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                <p className="orda-inter text-sm text-[#F6F4EC] leading-relaxed">
+              <div className="max-w-[85%] rounded-[16px] rounded-tl-[4px] px-4 py-3" style={{ background: "rgba(241,233,210,0.7)", border: "1px solid rgba(59,42,19,0.07)" }}>
+                <p className="orda-inter text-sm text-[#2E2013] leading-relaxed">
                   {t("aiPreview.sampleAnswer")}
                 </p>
               </div>
@@ -977,23 +1022,23 @@ function ArtifactsPreviewSection({ onExplore }: { onExplore: () => void }) {
   const rarityIcons: Record<string, string> = { legendary: "⚜", rare: "🗿", common: "🪶" };
 
   return (
-    <section id="artifacts-section" className="relative py-28 md:py-36 scroll-mt-24" style={{ background: "#0F1115" }}>
+    <section id="artifacts-section" className="relative py-28 md:py-36 scroll-mt-24" style={{ background: "#EDE1C4" }}>
       <div className="max-w-6xl mx-auto px-6">
         <ScrollReveal className="text-center mb-14">
           <div className="badge-gold mb-4 inline-block">{t("artifactsPreview.badge")}</div>
-          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC]">{t("artifactsPreview.title")}</h2>
+          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#2E2013]">{t("artifactsPreview.title")}</h2>
         </ScrollReveal>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
           {items.map((artifact, i) => (
             <ScrollReveal key={artifact?.id ?? `artifact-skeleton-${i}`} delay={i * 0.06}>
               {!artifact ? (
-                <div className="rounded-[20px] aspect-square" style={{ background: "rgba(34,38,47,0.5)" }} />
+                <div className="rounded-[20px] aspect-square" style={{ background: "rgba(241,233,210,0.5)" }} />
               ) : (
                 <div onClick={onExplore} className="rounded-[20px] p-5 cursor-pointer card-hover gold-hover aspect-square flex flex-col items-center justify-center text-center"
-                  style={{ background: "rgba(34,38,47,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  style={{ background: "rgba(241,233,210,0.6)", border: "1px solid rgba(59,42,19,0.06)" }}>
                   <span className="text-4xl mb-3">{rarityIcons[artifact.rarity?.toLowerCase()] || "🪶"}</span>
-                  <h3 className="orda-cinzel text-xs font-semibold text-[#F6F4EC]">{artifact.name}</h3>
-                  <span className="text-[10px] orda-inter text-[#B7BAC3] mt-1">{artifact.era}</span>
+                  <h3 className="orda-cinzel text-xs font-semibold text-[#2E2013]">{artifact.name}</h3>
+                  <span className="text-[10px] orda-inter text-[#5C4E38] mt-1">{artifact.era}</span>
                 </div>
               )}
             </ScrollReveal>
@@ -1013,23 +1058,23 @@ function AdventureSection() {
     { icon: BookOpen, title: t("adventure.items.certificate.title"), text: t("adventure.items.certificate.text") },
   ];
   return (
-    <section className="relative py-28 md:py-36" style={{ background: "linear-gradient(180deg, #0F1115 0%, #12141B 100%)" }}>
+    <section className="relative py-28 md:py-36" style={{ background: "linear-gradient(180deg, #EDE1C4 0%, #E6D8B8 100%)" }}>
       <div className="max-w-5xl mx-auto px-6">
         <ScrollReveal className="text-center mb-14">
           <div className="badge-gold mb-4 inline-block">{t("adventure.badge")}</div>
-          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC] mb-4">{t("adventure.title")}</h2>
-          <p className="orda-inter text-[#B7BAC3] max-w-xl mx-auto">
+          <h2 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#2E2013] mb-4">{t("adventure.title")}</h2>
+          <p className="orda-inter text-[#5C4E38] max-w-xl mx-auto">
             {t("adventure.description")}
           </p>
         </ScrollReveal>
         <ScrollReveal delay={0.15} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {items.map((item) => (
-            <div key={item.title} className="rounded-[20px] p-6 text-center card-hover gold-hover" style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 mx-auto" style={{ background: "rgba(212,175,55,0.1)", border: "1px solid rgba(212,175,55,0.2)" }}>
-                <item.icon size={18} color="#D4AF37" />
+            <div key={item.title} className="rounded-[20px] p-6 text-center card-hover gold-hover" style={{ background: "rgba(241,233,210,0.5)", border: "1px solid rgba(59,42,19,0.06)" }}>
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 mx-auto" style={{ background: "rgba(184,137,43,0.1)", border: "1px solid rgba(184,137,43,0.2)" }}>
+                <item.icon size={18} color="#B8892B" />
               </div>
-              <h3 className="orda-cinzel text-sm font-semibold text-[#F6F4EC] mb-2">{item.title}</h3>
-              <p className="orda-inter text-xs text-[#B7BAC3] leading-relaxed">{item.text}</p>
+              <h3 className="orda-cinzel text-sm font-semibold text-[#2E2013] mb-2">{item.title}</h3>
+              <p className="orda-inter text-xs text-[#5C4E38] leading-relaxed">{item.text}</p>
             </div>
           ))}
         </ScrollReveal>
@@ -1052,7 +1097,7 @@ function StatisticsSection() {
 
   return (
     <section className="relative py-24 md:py-32"
-      style={{ background: "#0D0F15", borderTop: "1px solid rgba(255,255,255,0.04)", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+      style={{ background: "#DCCBA0", borderTop: "1px solid rgba(59,42,19,0.04)", borderBottom: "1px solid rgba(59,42,19,0.04)" }}>
       <div className="max-w-5xl mx-auto px-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
           <StatCounter value={citiesTotal} label={t("stats.cities")} />
@@ -1068,13 +1113,13 @@ function StatisticsSection() {
 function FinalCTASection({ onStart }: { onStart: () => void }) {
   const { t } = useTranslation();
   return (
-    <section className="relative py-32 md:py-40 overflow-hidden text-center" style={{ background: "radial-gradient(ellipse at 50% 40%, rgba(212,175,55,0.08) 0%, #0F1115 65%)" }}>
+    <section className="relative py-32 md:py-40 overflow-hidden text-center" style={{ background: "radial-gradient(ellipse at 50% 40%, rgba(184,137,43,0.08) 0%, #EDE1C4 65%)" }}>
       <DustParticles />
       <div className="relative z-10 max-w-2xl mx-auto px-6">
         <ScrollReveal>
-          <span className="orda-cinzel text-2xl text-[#D4AF37] block mb-4">⬦</span>
-          <h2 className="orda-cinzel text-3xl md:text-5xl font-bold text-[#F6F4EC] mb-6">{t("finalCta.title")}</h2>
-          <p className="orda-inter text-[#B7BAC3] text-base md:text-lg mb-10 leading-relaxed">
+          <span className="orda-cinzel text-2xl text-[#B8892B] block mb-4">⬦</span>
+          <h2 className="orda-cinzel text-3xl md:text-5xl font-bold text-[#2E2013] mb-6">{t("finalCta.title")}</h2>
+          <p className="orda-inter text-[#5C4E38] text-base md:text-lg mb-10 leading-relaxed">
             {t("finalCta.description")}
           </p>
           <button onClick={onStart} className="btn-primary text-base px-10 py-4 inline-flex items-center gap-3">
@@ -1102,39 +1147,39 @@ function LandingFooter({ onNav }: { onNav: (v: View) => void }) {
     [t("footer.links.terms"), "terms"],
   ];
   return (
-    <footer id="about-section" className="relative py-12 border-t scroll-mt-24" style={{ background: "#0A0C10", borderColor: "rgba(255,255,255,0.05)" }}>
+    <footer id="about-section" className="relative py-12 border-t scroll-mt-24" style={{ background: "#D8C79C", borderColor: "rgba(59,42,19,0.05)" }}>
       <div className="max-w-6xl mx-auto px-6">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6 mb-8">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)" }}>
-              <span className="text-[#0F1115] font-bold text-sm orda-cinzel">O</span>
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "linear-gradient(135deg,#B8892B,#8C6239)" }}>
+              <span className="text-[#EDE1C4] font-bold text-sm orda-cinzel">O</span>
             </div>
-            <span className="text-base font-bold orda-cinzel tracking-[0.2em] text-[#D4AF37]">ORDA</span>
+            <span className="text-base font-bold orda-cinzel tracking-[0.2em] text-[#B8892B]">ORDA</span>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
             {exploreLinks.map(([label, id]) => (
               <button key={id} onClick={() => smoothScrollToId(id)}
-                className="nav-link text-xs orda-inter text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors">
+                className="nav-link text-xs orda-inter text-[#5C4E38] hover:text-[#2E2013] transition-colors">
                 {label}
               </button>
             ))}
           </div>
         </div>
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
-          <p className="text-[11px] orda-inter text-[#B7BAC3]">{t("footer.copyright", { year: new Date().getFullYear() })}</p>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t" style={{ borderColor: "rgba(59,42,19,0.04)" }}>
+          <p className="text-[11px] orda-inter text-[#5C4E38]">{t("footer.copyright", { year: new Date().getFullYear() })}</p>
           <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
             {legalLinks.map(([label, v]) => (
               <button key={v} onClick={() => onNav(v)}
-                className="nav-link text-[11px] orda-inter text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors">
+                className="nav-link text-[11px] orda-inter text-[#5C4E38] hover:text-[#2E2013] transition-colors">
                 {label}
               </button>
             ))}
-            <span className="text-[11px] orda-inter select-none" style={{ color: "#B7BAC3", opacity: 0.4, cursor: "not-allowed" }}
+            <span className="text-[11px] orda-inter select-none" style={{ color: "#5C4E38", opacity: 0.4, cursor: "not-allowed" }}
               title={t("footer.links.comingSoon")}>
               {t("footer.links.github")}
             </span>
           </div>
-          <p className="text-[11px] orda-inter text-[#B7BAC3]">{t("footer.subtitle")}</p>
+          <p className="text-[11px] orda-inter text-[#5C4E38]">{t("footer.subtitle")}</p>
         </div>
       </div>
     </footer>
@@ -1166,12 +1211,12 @@ function CharacterSelect({ onSelect }: { onSelect: (c: CharType) => void }) {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 py-24 relative">
-      <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at center top, rgba(212,175,55,0.04) 0%, transparent 60%)" }} />
+      <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at center top, rgba(184,137,43,0.04) 0%, transparent 60%)" }} />
 
       <div className="animate-fade-in text-center mb-16">
         <div className="badge-gold mb-6 inline-block">{t("chars.badge")}</div>
-        <h1 className="orda-cinzel text-4xl md:text-5xl font-bold text-[#F6F4EC] mb-4">{t("chars.title")}</h1>
-        <p className="orda-inter text-[#B7BAC3] text-base max-w-md mx-auto leading-relaxed">
+        <h1 className="orda-cinzel text-4xl md:text-5xl font-bold text-[#2E2013] mb-4">{t("chars.title")}</h1>
+        <p className="orda-inter text-[#5C4E38] text-base max-w-md mx-auto leading-relaxed">
           {t("chars.description")}
         </p>
       </div>
@@ -1185,9 +1230,9 @@ function CharacterSelect({ onSelect }: { onSelect: (c: CharType) => void }) {
               className="animate-slide-up card-hover gold-hover cursor-pointer relative rounded-[20px] p-8 flex flex-col items-center text-center"
               style={{
                 animationDelay: `${i * 0.12}s`,
-                background: isHovered ? `rgba(34,38,47,0.9)` : "rgba(34,38,47,0.6)",
-                border: isHovered ? `1px solid ${char.color}50` : "1px solid rgba(255,255,255,0.06)",
-                boxShadow: isHovered ? `0 0 40px ${char.color}20, 0 20px 60px rgba(0,0,0,0.5)` : "0 8px 40px rgba(0,0,0,0.3)",
+                background: isHovered ? `rgba(241,233,210,0.9)` : "rgba(241,233,210,0.6)",
+                border: isHovered ? `1px solid ${char.color}50` : "1px solid rgba(59,42,19,0.06)",
+                boxShadow: isHovered ? "0 10px 24px rgba(59,42,19,0.2)" : "0 4px 14px rgba(59,42,19,0.12)",
               }}
               onMouseEnter={() => setHovered(key)}
               onMouseLeave={() => setHovered(null)}
@@ -1204,14 +1249,14 @@ function CharacterSelect({ onSelect }: { onSelect: (c: CharType) => void }) {
                 style={{
                   background: `linear-gradient(135deg, ${char.color}18, ${char.color}08)`,
                   border: `1px solid ${char.color}30`,
-                  boxShadow: isHovered ? `0 0 30px ${char.color}30` : "none",
+                  boxShadow: isHovered ? `0 4px 12px ${char.color}30` : "none",
                 }}>
                 <Icon size={32} color={char.color} />
               </div>
 
               <span className="badge-gold mb-3 text-[10px]">{char.title}</span>
-              <h3 className="orda-cinzel text-xl font-bold text-[#F6F4EC] mb-3">{char.name}</h3>
-              <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed mb-6">{char.description}</p>
+              <h3 className="orda-cinzel text-xl font-bold text-[#2E2013] mb-3">{char.name}</h3>
+              <p className="orda-inter text-sm text-[#5C4E38] leading-relaxed mb-6">{char.description}</p>
 
               <div className="flex flex-wrap gap-2 justify-center mb-6">
                 {char.traits.map(trait => (
@@ -1224,8 +1269,8 @@ function CharacterSelect({ onSelect }: { onSelect: (c: CharType) => void }) {
 
               <button className="w-full py-3 rounded-xl text-sm font-semibold orda-cinzel tracking-widest transition-all duration-300"
                 style={{
-                  background: isHovered ? `linear-gradient(135deg, ${char.color}, ${char.color}cc)` : "rgba(255,255,255,0.04)",
-                  color: isHovered ? "#0F1115" : char.color,
+                  background: isHovered ? `linear-gradient(135deg, ${char.color}, ${char.color}cc)` : "rgba(59,42,19,0.04)",
+                  color: isHovered ? "#EDE1C4" : char.color,
                   border: `1px solid ${char.color}30`,
                 }}>
                 {t("chars.choose", { name: char.shortName })}
@@ -1255,7 +1300,7 @@ function StoryIntro({ character, onBegin }: { character: CharType; onBegin: () =
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden"
-      style={{ background: "radial-gradient(ellipse at center, #171A20 0%, #0F1115 100%)" }}>
+      style={{ background: "radial-gradient(ellipse at center, #E2D3AC 0%, #EDE1C4 100%)" }}>
 
       {/* Parchment texture overlay */}
       <div className="absolute inset-0 pointer-events-none opacity-[0.03] animate-grain"
@@ -1263,13 +1308,13 @@ function StoryIntro({ character, onBegin }: { character: CharType; onBegin: () =
 
       {/* Glowing orb */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 rounded-full pointer-events-none"
-        style={{ background: "radial-gradient(ellipse, rgba(212,175,55,0.06) 0%, transparent 70%)", filter: "blur(40px)" }} />
+        style={{ background: "radial-gradient(ellipse, rgba(184,137,43,0.06) 0%, transparent 70%)", filter: "blur(40px)" }} />
 
       <div className="relative z-10 max-w-2xl w-full px-8 text-center">
         {/* AI Emblem */}
         <div className={`transition-all duration-1000 ${phase >= 1 ? "opacity-100 scale-100" : "opacity-0 scale-90"}`}>
           <div className="w-24 h-24 mx-auto mb-8 rounded-full flex items-center justify-center animate-float"
-            style={{ background: "linear-gradient(135deg,rgba(212,175,55,0.15),rgba(212,175,55,0.05))", border: "1px solid rgba(212,175,55,0.3)", boxShadow: "0 0 60px rgba(212,175,55,0.15)" }}>
+            style={{ background: "linear-gradient(135deg,rgba(184,137,43,0.15),rgba(184,137,43,0.05))", border: "1px solid rgba(184,137,43,0.3)", boxShadow: "0 4px 16px rgba(59,42,19,0.15)" }}>
             <span className="text-3xl">⚜</span>
           </div>
         </div>
@@ -1277,18 +1322,18 @@ function StoryIntro({ character, onBegin }: { character: CharType; onBegin: () =
         {/* Parchment card */}
         <div className={`transition-all duration-1000 delay-300 ${phase >= 2 ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
           <div className="rounded-[20px] p-10 mb-8 relative"
-            style={{ background: "rgba(23,26,32,0.8)", border: "1px solid rgba(212,175,55,0.15)", boxShadow: "0 0 80px rgba(212,175,55,0.08), inset 0 0 40px rgba(212,175,55,0.02)" }}>
+            style={{ background: "rgba(243,233,210,0.95)", border: "1px solid rgba(184,137,43,0.25)", boxShadow: "0 8px 28px rgba(59,42,19,0.18)" }}>
 
-            <div className="text-[#D4AF37] text-xs tracking-[0.3em] orda-cinzel mb-6">{t("intro.oracleSpeaks")}</div>
+            <div className="text-[#B8892B] text-xs tracking-[0.3em] orda-cinzel mb-6">{t("intro.oracleSpeaks")}</div>
 
-            <blockquote className="orda-cormorant text-2xl md:text-3xl text-[#F6F4EC] leading-relaxed italic font-light mb-6">
+            <blockquote className="orda-cormorant text-2xl md:text-3xl text-[#2E2013] leading-relaxed italic font-light mb-6">
               "{t("intro.quote")}"
             </blockquote>
 
-            <div className="flex items-center justify-center gap-3 text-sm text-[#B7BAC3] orda-inter">
-              <span className="w-8 h-px bg-[#D4AF37]/30" />
-              <span>{t("intro.youArePrefix")} <span className="text-[#D4AF37]">{char.name}</span>{t("intro.youAreSuffix")}</span>
-              <span className="w-8 h-px bg-[#D4AF37]/30" />
+            <div className="flex items-center justify-center gap-3 text-sm text-[#5C4E38] orda-inter">
+              <span className="w-8 h-px bg-[#B8892B]/30" />
+              <span>{t("intro.youArePrefix")} <span className="text-[#B8892B]">{char.name}</span>{t("intro.youAreSuffix")}</span>
+              <span className="w-8 h-px bg-[#B8892B]/30" />
             </div>
           </div>
         </div>
@@ -1299,7 +1344,7 @@ function StoryIntro({ character, onBegin }: { character: CharType; onBegin: () =
             <span>{t("intro.begin")}</span>
             <ChevronRight size={18} />
           </button>
-          <p className="text-[#B7BAC3] text-xs mt-4 orda-inter tracking-wide">
+          <p className="text-[#5C4E38] text-xs mt-4 orda-inter tracking-wide">
             {t("intro.footer")}
           </p>
         </div>
@@ -1311,7 +1356,10 @@ function StoryIntro({ character, onBegin }: { character: CharType; onBegin: () =
 }
 
 // ─── INTERACTIVE MAP ──────────────────────────────────────────────────────────
-type MapLayerKey = "cities" | "rivers" | "tradeRoutes" | "borders";
+// "rivers"/"borders" were separate toggleable SVG layers over the old procedural
+// map; both are now baked into the static background image (map-golden-horde.png)
+// and can no longer be shown/hidden independently, so those two toggles are gone.
+type MapLayerKey = "cities" | "tradeRoutes";
 const MAP_INTRO_STORAGE_KEY = "orda-map-intro-seen";
 
 function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs, cityProgress, activeCityId }: {
@@ -1325,11 +1373,28 @@ function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs, cit
   const { t } = useTranslation();
   const [hovered, setHovered] = useState<string | null>(null);
   const [layers, setLayers] = useState<Record<MapLayerKey, boolean>>({
-    cities: true, rivers: true, tradeRoutes: true, borders: true,
+    cities: true, tradeRoutes: true,
   });
   const [introDismissed, setIntroDismissed] = useState(() =>
     typeof window === "undefined" || window.localStorage.getItem(MAP_INTRO_STORAGE_KEY) === "1"
   );
+
+  // Linear-journey unlock reveal: whenever a city flips from locked to unlocked
+  // (quest completion unlocked the next one, reflected here as soon as the
+  // `cities` query refetches — no page reload needed), briefly highlight it.
+  const previouslyUnlockedRef = useRef<Set<string> | null>(null);
+  const [justUnlockedIds, setJustUnlockedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const currentlyUnlocked = new Set(cities.filter(c => c.isUnlocked !== false).map(c => c.id));
+    const previous = previouslyUnlockedRef.current;
+    previouslyUnlockedRef.current = currentlyUnlocked;
+    if (!previous) return; // first render — nothing "just" unlocked yet
+    const newlyUnlocked = [...currentlyUnlocked].filter(id => !previous.has(id));
+    if (newlyUnlocked.length === 0) return;
+    setJustUnlockedIds(new Set(newlyUnlocked));
+    const timer = setTimeout(() => setJustUnlockedIds(new Set()), 3000);
+    return () => clearTimeout(timer);
+  }, [cities]);
 
   const dismissIntro = () => {
     setIntroDismissed(true);
@@ -1362,22 +1427,136 @@ function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs, cit
 
   const LAYER_TOGGLES: { key: MapLayerKey; label: string }[] = [
     { key: "cities", label: t("map.layers.cities") },
-    { key: "rivers", label: t("map.layers.rivers") },
     { key: "tradeRoutes", label: t("map.layers.tradeRoutes") },
-    { key: "borders", label: t("map.layers.borders") },
   ];
 
+  // Every layer (background art, route overlay, fog patches, markers) shares this
+  // one coordinate space and stretches to fill the container edge-to-edge, so a
+  // percentage position always means the same point on every layer regardless of
+  // how the container itself is sized — that's what keeps markers, routes and fog
+  // aligned to the background as the map scales responsively.
+  const pct = (x: number, y: number) => ({ left: `${(x / 900) * 100}%`, top: `${(y / 480) * 100}%` });
+  const lockedCities = visibleCities.filter((c) => c.isUnlocked === false);
+
   return (
-    <div className="relative w-full h-full rounded-[16px] overflow-hidden"
-      style={{ background: "#0E1018", border: "1px solid rgba(255,255,255,0.06)" }}>
+    <div className="relative w-full h-full rounded-[10px] overflow-hidden"
+      style={{
+        background: "#E6D8B8",
+        border: "3px solid rgba(59,42,19,0.55)",
+        boxShadow: "inset 0 0 50px rgba(59,42,19,0.22), inset 0 0 0 1px rgba(255,251,235,0.4)",
+      }}>
 
-      {/* Parchment noise */}
-      <div className="absolute inset-0 opacity-[0.04] pointer-events-none animate-grain"
-        style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")" }} />
+      {/* Shared filter defs — referenced by id from the separate per-marker SVGs below. */}
+      <svg width="0" height="0" style={{ position: "absolute" }}>
+        <defs>
+          <filter id="marker-emboss" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="1" stdDeviation="0.8" floodColor="#3B2A1A" floodOpacity="0.45" />
+          </filter>
+          <filter id="active-glow" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="3.5" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+          <filter id="locked-blur" x="-50%" y="-50%" width="200%" height="200%">
+            <feColorMatrix type="saturate" values="0.05" />
+            <feGaussianBlur stdDeviation="2.6" />
+          </filter>
+        </defs>
+      </svg>
 
-      {/* Ambient glow */}
-      <div className="absolute inset-0 pointer-events-none"
-        style={{ background: "radial-gradient(ellipse at 45% 50%, rgba(212,175,55,0.04) 0%, transparent 65%)" }} />
+      {/* ── Background layer: the actual historical map image — a single static
+          background, stretched to fill the box edge-to-edge (objectFit: "fill")
+          so its 0–100% bounds line up exactly with the percentage coordinates
+          every other layer (routes, fog, markers) is positioned with. */}
+      <div className="absolute inset-0 pointer-events-none">
+        <img src={mapBackground} alt="" className="w-full h-full" style={{ objectFit: "fill" }} />
+        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 900 480" preserveAspectRatio="none">
+          {/* Compass rose */}
+          <g transform="translate(820,60)">
+            <circle cx="0" cy="0" r="22" fill="rgba(243,233,210,0.9)" stroke="rgba(59,42,19,0.35)" strokeWidth="1" />
+            <text x="0" y="-8" textAnchor="middle" fill="#8C6239" fontSize="8" fontFamily="Cinzel,serif">N</text>
+            <text x="0" y="14" textAnchor="middle" fill="rgba(59,42,19,0.55)" fontSize="6" fontFamily="Cinzel,serif">S</text>
+            <text x="12" y="3" textAnchor="middle" fill="rgba(59,42,19,0.55)" fontSize="6" fontFamily="Cinzel,serif">E</text>
+            <text x="-12" y="3" textAnchor="middle" fill="rgba(59,42,19,0.55)" fontSize="6" fontFamily="Cinzel,serif">W</text>
+            <path d="M 0,-18 L 3,-4 L 0,-8 L -3,-4 Z" fill="#8C6239" />
+            <path d="M 0,18 L 3,4 L 0,8 L -3,4 Z" fill="rgba(59,42,19,0.3)" />
+          </g>
+
+          {/* Scale bar */}
+          <g transform="translate(60,448)">
+            <line x1="0" y1="0" x2="80" y2="0" stroke="rgba(59,42,19,0.5)" strokeWidth="1" />
+            <line x1="0" y1="-4" x2="0" y2="4" stroke="rgba(59,42,19,0.5)" strokeWidth="1" />
+            <line x1="80" y1="-4" x2="80" y2="4" stroke="rgba(59,42,19,0.5)" strokeWidth="1" />
+            <text x="40" y="14" textAnchor="middle" fill="rgba(59,42,19,0.6)" fontSize="8" fontFamily="Inter,sans-serif">{t("map.scale")}</text>
+          </g>
+
+          {/* Title overlay */}
+          <text x="450" y="32" textAnchor="middle" fill="rgba(59,42,19,0.4)"
+            fontSize="11" fontFamily="Cinzel,serif" letterSpacing="4">
+            {t("map.titleOverlay")}
+          </text>
+        </svg>
+
+        {/* Soft vignette, blending the image's own edges into the frame */}
+        <div className="absolute inset-0"
+          style={{ background: "radial-gradient(ellipse at 45% 45%, transparent 60%, rgba(59,42,19,0.16) 100%)" }} />
+      </div>
+
+      {/* ── SVG route overlay: dashed caravan roads, a layer of its own on top of
+          the background, sharing the same stretched coordinate space. */}
+      {layers.tradeRoutes && (
+        <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 900 480" preserveAspectRatio="none">
+          {routeSegments.map((segment) => {
+            if (segment.state === "completed") {
+              return (
+                <path key={segment.key} d={segment.path} className="route-path"
+                  stroke="#B8892B" strokeOpacity="0.75" strokeWidth="2" fill="none" />
+              );
+            }
+            if (segment.state === "current") {
+              return (
+                <path key={segment.key} d={segment.path} className="route-path"
+                  stroke="#8C6239" strokeOpacity="0.9" strokeWidth="2.25" fill="none" />
+              );
+            }
+            return (
+              <path key={segment.key} d={segment.path} className="route-path"
+                stroke="rgba(59,42,19,0.32)" strokeWidth="1.25" fill="none" />
+            );
+          })}
+          {/* World route network — shown when no single character journey is
+              active, colored by the same real completion data as the journey
+              routes above (gold once both ends are done, faded otherwise). */}
+          {!journey && WORLD_ROUTE_EDGES.map(([fromSlug, toSlug]) => {
+            const from = citiesBySlug.get(fromSlug);
+            const to = citiesBySlug.get(toSlug);
+            if (!from || !to) return null;
+            const fromDone = completedCitySlugs?.has(fromSlug) ?? false;
+            const toDone = completedCitySlugs?.has(toSlug) ?? false;
+            const isDone = fromDone && toDone;
+            return (
+              <path key={`${fromSlug}-${toSlug}`} d={routeCurvePath(from, to)}
+                className="route-path"
+                stroke={isDone ? "#B8892B" : "rgba(59,42,19,0.32)"}
+                strokeOpacity={isDone ? 0.75 : 1}
+                strokeWidth={isDone ? 2 : 1.25}
+                fill="none" />
+            );
+          })}
+        </svg>
+      )}
+
+      {/* ── Fog-of-war overlays: one soft parchment cloud per locked city, hiding
+          it (and its name) from view like an unexplored region on a campaign map. */}
+      {layers.cities && lockedCities.map((city) => {
+        const { left, top } = pct(city.cx, city.cy);
+        return (
+          <div key={`fog-${city.id}`} className="absolute pointer-events-none"
+            style={{
+              left, top, width: "17%", height: "32%", transform: "translate(-50%,-50%)",
+              background: "radial-gradient(ellipse at center, rgba(230,216,184,0.96) 0%, rgba(230,216,184,0.85) 45%, rgba(230,216,184,0) 78%)",
+            }} />
+        );
+      })}
 
       {/* Layer toggles */}
       <div className="absolute top-3 left-3 z-10 flex flex-wrap gap-1.5" style={{ maxWidth: "calc(100% - 24px)" }}>
@@ -1385,9 +1564,9 @@ function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs, cit
           <button key={key} onClick={() => toggleLayer(key)}
             className="text-[10px] sm:text-xs px-2.5 py-1 rounded-lg orda-inter transition-colors"
             style={{
-              background: layers[key] ? "rgba(212,175,55,0.12)" : "rgba(255,255,255,0.04)",
-              color: layers[key] ? "#D4AF37" : "#B7BAC3",
-              border: `1px solid ${layers[key] ? "rgba(212,175,55,0.2)" : "rgba(255,255,255,0.06)"}`,
+              background: layers[key] ? "rgba(184,137,43,0.12)" : "rgba(59,42,19,0.04)",
+              color: layers[key] ? "#B8892B" : "#5C4E38",
+              border: `1px solid ${layers[key] ? "rgba(184,137,43,0.2)" : "rgba(59,42,19,0.06)"}`,
             }}>
             {label}
           </button>
@@ -1398,217 +1577,288 @@ function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs, cit
       {showIntro && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 glass rounded-full pl-4 pr-2 py-2 flex items-center gap-2 animate-fade-in"
           style={{ maxWidth: "min(360px, 90%)" }}>
-          <span className="text-[11px] sm:text-xs orda-inter text-[#F6F4EC] whitespace-nowrap overflow-hidden text-ellipsis">
+          <span className="text-[11px] sm:text-xs orda-inter text-[#2E2013] whitespace-nowrap overflow-hidden text-ellipsis">
             {t("map.firstVisitHint")}
           </span>
           <button onClick={dismissIntro} aria-label={t("map.dismissHint")}
-            className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors">
-            <X size={11} color="#B7BAC3" />
+            className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center hover:bg-[rgba(59,42,19,0.08)] transition-colors">
+            <X size={11} color="#5C4E38" />
           </button>
         </div>
       )}
 
-      <svg className="w-full h-full animate-map-reveal" viewBox="0 0 900 480" preserveAspectRatio="xMidYMid meet">
-        <defs>
-          <filter id="city-glow">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <filter id="territory-glow">
-            <feGaussianBlur stdDeviation="8" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <filter id="route-current-glow">
-            <feGaussianBlur stdDeviation="2.5" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <radialGradient id="territory-fill" cx="45%" cy="50%" r="55%">
-            <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.06" />
-            <stop offset="100%" stopColor="#D4AF37" stopOpacity="0.01" />
-          </radialGradient>
-          <linearGradient id="route-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.2" />
-            <stop offset="50%" stopColor="#D4AF37" stopOpacity="0.6" />
-            <stop offset="100%" stopColor="#D4AF37" stopOpacity="0.2" />
-          </linearGradient>
-        </defs>
-
-        {/* Territory outline (Historical Borders layer) */}
-        {layers.borders && (
-          <path
-            d="M 75,328 C 65,268 75,218 132,188 L 202,152 L 304,112 L 422,82 C 490,75 542,88 582,108 L 672,148 L 772,238 L 820,332 L 800,422 L 742,458 L 648,468 L 555,462 L 458,452 L 358,440 L 258,418 L 172,388 L 92,350 Z"
-            fill="url(#territory-fill)"
-            stroke="rgba(212,175,55,0.18)"
-            strokeWidth="1.5"
-            filter="url(#territory-glow)"
-          />
-        )}
-
-        {/* Grid lines (latitude/longitude feel) */}
-        {[150, 250, 350, 450].map(y => (
-          <line key={y} x1="60" y1={y} x2="840" y2={y}
-            stroke="rgba(255,255,255,0.025)" strokeWidth="1" strokeDasharray="4 8" />
-        ))}
-        {[180, 300, 420, 540, 660, 780].map(x => (
-          <line key={x} x1={x} y1="60" x2={x} y2="480"
-            stroke="rgba(255,255,255,0.025)" strokeWidth="1" strokeDasharray="4 8" />
-        ))}
-
-        {/* Rivers layer */}
-        {layers.rivers && (
-          <>
-            {/* Volga River */}
-            <path d="M 408,40 C 400,100 388,180 372,295 C 362,370 358,430 355,480"
-              stroke="rgba(87,214,209,0.2)" strokeWidth="2" fill="none" />
-            {/* Ural River */}
-            <path d="M 498,30 C 492,120 488,210 488,295 L 488,480"
-              stroke="rgba(87,214,209,0.15)" strokeWidth="1.5" fill="none" />
-            {/* Syr Darya */}
-            <path d="M 820,420 C 780,428 730,432 680,432 C 640,432 580,438 540,460"
-              stroke="rgba(87,214,209,0.15)" strokeWidth="1.5" fill="none" />
-          </>
-        )}
-
-        {/* Trade Routes layer — animated, colored by real quest-completion progress */}
-        {layers.tradeRoutes && routeSegments.map((segment) => {
-          if (segment.state === "completed") {
-            return (
-              <path key={segment.key} d={segment.path} className="route-path"
-                stroke="#D4AF37" strokeOpacity="0.55" strokeWidth="1.5" fill="none" />
-            );
-          }
-          if (segment.state === "current") {
-            return (
-              <path key={segment.key} d={segment.path} className="route-path animate-map-glow"
-                stroke="#D4AF37" strokeOpacity="0.9" strokeWidth="2" fill="none"
-                filter="url(#route-current-glow)" />
-            );
-          }
-          return (
-            <path key={segment.key} d={segment.path}
-              stroke="rgba(183,186,195,0.22)" strokeWidth="1.25" strokeDasharray="3 6" fill="none" />
-          );
-        })}
-        {/* Decorative trade routes when no journey (e.g. landing preview) is active */}
-        {layers.tradeRoutes && !journey && visibleCities.length > 1 && (() => {
-          const sorted = [...visibleCities].sort((a, b) => a.cx - b.cx);
-          return sorted.slice(0, -1).map((from, i) => (
-            <path key={`${from.slug}-${sorted[i + 1].slug}`} d={routeCurvePath(from, sorted[i + 1])}
-              className={i % 2 === 0 ? "route-path" : "route-path-rev"}
-              stroke="url(#route-grad)" strokeWidth="1.5" fill="none" />
-          ));
-        })()}
-
-        {/* City markers */}
-        {layers.cities && visibleCities.map((city) => {
-          const isHov = hovered === city.id;
-          const isRecommended = showIntro && city.slug === recommendedSlug;
-          // The one globally active city (from ActiveCityContext) — stays highlighted
-          // here regardless of hover, so the map always agrees with the quest panel,
-          // artifact panel, bottom carousel, and AI historian about which city is "it".
-          const isActive = Boolean(activeCityId) && city.id === activeCityId;
-          return (
-            <g key={city.id} className="city-marker"
-              onClick={() => onSelectCity(city)}
-              onMouseEnter={() => setHovered(city.id)}
-              onMouseLeave={() => setHovered(null)}>
-
-              {/* Recommended starting-city highlight (persistent, first visit only) */}
-              {isRecommended && (
-                <circle cx={city.cx} cy={city.cy} r={city.size + 14}
-                  fill="none" stroke="#D4AF37" strokeWidth="1.25" opacity="0.5"
-                  style={{ animation: "pulse-ring 2.2s ease-out infinite" }} />
+      {/* ── City markers: absolutely positioned HTML elements, placed by percentage
+          — the part of this map that's actually interactive. Each carries its own
+          small local SVG icon; only the wrapper's left/top position (and the label
+          below it) is real DOM/CSS, so positioning stays correct at any container
+          size without recomputing anything. */}
+      {layers.cities && visibleCities.map((city) => {
+        const isHov = hovered === city.id;
+        const isRecommended = showIntro && city.slug === recommendedSlug;
+        // The one globally active city (from ActiveCityContext) — stays highlighted
+        // here regardless of hover, so the map always agrees with the quest panel,
+        // artifact panel, bottom carousel, and AI historian about which city is "it".
+        const isActive = Boolean(activeCityId) && city.id === activeCityId;
+        // Explicitly false = locked (there's a signed-in user and they haven't
+        // reached it yet). null/true = unlocked or unknown (no user context,
+        // e.g. the anonymous landing preview) — never locked in that case.
+        const isLocked = city.isUnlocked === false;
+        const isJustUnlocked = justUnlockedIds.has(city.id);
+        const isCompleted = cityProgress?.[city.slug]?.status === "completed";
+        const markerFill = isLocked ? "#9C8F72" : isCompleted ? "#8C6239" : city.color;
+        const { left, top } = pct(city.cx, city.cy);
+        const R = city.size;
+        const box = (R + 20) * 2;
+        const c = box / 2;
+        return (
+          <button key={city.id} type="button" className="city-marker absolute flex flex-col items-center"
+            style={{ left, top, transform: "translate(-50%,-50%)", background: "none", border: "none", padding: 0, cursor: isLocked ? "not-allowed" : "pointer" }}
+            disabled={isLocked}
+            onClick={() => { if (!isLocked) onSelectCity(city); }}
+            onMouseEnter={() => setHovered(city.id)}
+            onMouseLeave={() => setHovered(null)}>
+            <svg width={box} height={box} viewBox={`0 0 ${box} ${box}`} style={{ overflow: "visible" }}>
+              {/* Recommended starting-city highlight (persistent, first visit only) — a
+                  static soft ring, no expanding/pulsing animation. */}
+              {isRecommended && !isLocked && (
+                <circle cx={c} cy={c} r={R + 10}
+                  fill="none" stroke="#B8892B" strokeWidth="1.25" opacity="0.5"
+                  className="animate-fade-in" />
               )}
 
-              {/* Active-city ring — steady (not pulsing), distinct from the onboarding hint above */}
-              {isActive && (
-                <circle cx={city.cx} cy={city.cy} r={city.size + 8}
-                  fill="none" stroke="#D4AF37" strokeWidth="1.5" opacity="0.8" />
+              {/* Active/selected city — the one explicit soft golden glow on the map,
+                  with only a very slight, slow breathing scale (no expanding rings). */}
+              {isActive && !isLocked && (
+                <circle cx={c} cy={c} r={R + 9}
+                  fill="none" stroke="#B8892B" strokeWidth="1.5" opacity="0.85"
+                  filter="url(#active-glow)"
+                  style={{ animation: "breathe 4s ease-in-out infinite", transformOrigin: `${c}px ${c}px` }} />
               )}
 
-              {/* Outer ring */}
-              <circle cx={city.cx} cy={city.cy} r={city.size + 4}
-                fill="none"
-                stroke={city.color}
-                strokeWidth={isHov || isActive ? 1.5 : 0.8}
-                opacity={isHov || isActive ? 0.6 : 0.2}
-                style={{ transition: "all 0.25s ease" }} />
+              {/* Just-unlocked reveal — a brief static highlight announcing the new
+                  destination, fades in and holds rather than pulsing/expanding. */}
+              {isJustUnlocked && (
+                <circle cx={c} cy={c} r={R + 6}
+                  fill="none" stroke="#B8892B" strokeWidth="2" opacity="0.9"
+                  className="animate-fade-in" />
+              )}
 
-              {/* Main dot — calm hover: soft glow + slight scale, no expanding ripple */}
-              <circle cx={city.cx} cy={city.cy} r={city.size}
-                fill={city.color}
-                opacity={isHov || isActive ? 1 : 0.7}
-                filter={isHov || isActive ? "url(#city-glow)" : "none"}
-                className="city-dot-pulse"
-                style={{ transition: "transform 0.25s ease, opacity 0.25s ease, filter 0.25s ease", transform: isHov ? `scale(1.05)` : "scale(1)", transformOrigin: `${city.cx}px ${city.cy}px`, cursor: "pointer" }} />
+              <g opacity={isLocked ? 0.22 : 1} filter={isLocked ? "url(#locked-blur)" : "url(#marker-emboss)"}
+                style={{ transition: "opacity 0.4s ease" }}
+                className={isJustUnlocked ? "animate-scale-in" : undefined}>
+                {/* Outer ring — engraved settlement mark */}
+                <circle cx={c} cy={c} r={R + 4}
+                  fill="none"
+                  stroke={isLocked ? "#9C8F72" : "#3B2A1A"}
+                  strokeWidth={isHov || isActive ? 1.5 : 1}
+                  opacity={isHov || isActive ? 0.7 : 0.35}
+                  style={{ transition: "all 0.25s ease" }} />
 
-              {/* Inner dot */}
-              <circle cx={city.cx} cy={city.cy} r={city.size * 0.4}
-                fill="rgba(15,17,21,0.8)" />
+                {/* Main dot */}
+                <circle cx={c} cy={c} r={R}
+                  fill={markerFill}
+                  stroke="#3B2A1A" strokeWidth="0.75"
+                  opacity={isHov && !isLocked ? 1 : isActive && !isLocked ? 1 : 0.85}
+                  style={{ transition: "transform 0.25s ease, opacity 0.25s ease", transform: isHov && !isLocked ? "scale(1.08)" : "scale(1)", transformOrigin: `${c}px ${c}px` }} />
 
-              {/* Label */}
-              <text x={city.cx} y={city.cy + city.size + 18}
-                textAnchor="middle" fill={isHov || isActive ? city.color : "#B7BAC3"}
-                fontSize="10" fontFamily="Cinzel, serif" letterSpacing="1"
-                style={{ transition: "fill 0.2s ease", fontWeight: isActive || city.slug === "sarai-batu" ? "700" : "400" }}>
+                {/* Inner mark — small ink dot, like an atlas settlement pip (hidden
+                    under the completed check so the two don't visually clash) */}
+                {!isCompleted && (
+                  <circle cx={c} cy={c} r={R * 0.32}
+                    fill="#F3E9D2" opacity="0.9" />
+                )}
+
+                {/* Completed-city indicator */}
+                {isCompleted && !isLocked && (
+                  <path d={`M ${c - R * 0.35},${c} L ${c - R * 0.08},${c + R * 0.3} L ${c + R * 0.4},${c - R * 0.35}`}
+                    fill="none" stroke="#F3E9D2" strokeWidth={Math.max(1, R * 0.18)} strokeLinecap="round" strokeLinejoin="round" />
+                )}
+
+                {/* Capital pennant */}
+                {city.slug === "sarai-batu" && !isLocked && (
+                  <path d={`M ${c},${c - R - 4} L ${c},${c - R - 15} L ${c + 8},${c - R - 11} Z`}
+                    fill="#B8892B" stroke="#3B2A1A" strokeWidth="0.5" />
+                )}
+              </g>
+            </svg>
+
+            {/* Label — locked cities stay nameless under the fog; hovering still
+                reveals identity via the tooltip below, not the map label itself. */}
+            {!isLocked && (
+              <span className="orda-cinzel whitespace-nowrap" style={{
+                marginTop: 2, fontSize: 10, letterSpacing: 1,
+                color: isHov || isActive ? "#8C6239" : "#3B2A1A",
+                fontWeight: isActive || city.slug === "sarai-batu" ? 700 : 400,
+                transition: "color 0.2s ease",
+              }}>
                 {city.name.toUpperCase()}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* Compass rose */}
-        <g transform="translate(820,60)">
-          <circle cx="0" cy="0" r="22" fill="rgba(15,17,21,0.8)" stroke="rgba(212,175,55,0.2)" strokeWidth="1" />
-          <text x="0" y="-8" textAnchor="middle" fill="#D4AF37" fontSize="8" fontFamily="Cinzel,serif">N</text>
-          <text x="0" y="14" textAnchor="middle" fill="rgba(212,175,55,0.5)" fontSize="6" fontFamily="Cinzel,serif">S</text>
-          <text x="12" y="3" textAnchor="middle" fill="rgba(212,175,55,0.5)" fontSize="6" fontFamily="Cinzel,serif">E</text>
-          <text x="-12" y="3" textAnchor="middle" fill="rgba(212,175,55,0.5)" fontSize="6" fontFamily="Cinzel,serif">W</text>
-          <path d="M 0,-18 L 3,-4 L 0,-8 L -3,-4 Z" fill="#D4AF37" />
-          <path d="M 0,18 L 3,4 L 0,8 L -3,4 Z" fill="rgba(212,175,55,0.3)" />
-        </g>
-
-        {/* Scale bar */}
-        <g transform="translate(60,448)">
-          <line x1="0" y1="0" x2="80" y2="0" stroke="rgba(212,175,55,0.4)" strokeWidth="1" />
-          <line x1="0" y1="-4" x2="0" y2="4" stroke="rgba(212,175,55,0.4)" strokeWidth="1" />
-          <line x1="80" y1="-4" x2="80" y2="4" stroke="rgba(212,175,55,0.4)" strokeWidth="1" />
-          <text x="40" y="14" textAnchor="middle" fill="rgba(212,175,55,0.5)" fontSize="8" fontFamily="Inter,sans-serif">{t("map.scale")}</text>
-        </g>
-
-        {/* Title overlay */}
-        <text x="450" y="32" textAnchor="middle" fill="rgba(212,175,55,0.35)"
-          fontSize="11" fontFamily="Cinzel,serif" letterSpacing="4">
-          {t("map.titleOverlay")}
-        </text>
-      </svg>
+              </span>
+            )}
+          </button>
+        );
+      })}
 
       {/* Hover tooltip — compact, doesn't move the marker */}
       {hovered && (() => {
         const city = visibleCities.find(c => c.id === hovered);
         if (!city) return null;
+
+        if (city.isUnlocked === false) {
+          return (
+            <div className="absolute bottom-4 left-4 right-4 sm:right-auto glass rounded-[14px] px-4 py-3 pointer-events-none animate-fade-in"
+              style={{ maxWidth: "min(260px, 100%)" }}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm">🔒</span>
+                <span className="text-[#5C4E38] text-xs orda-cinzel tracking-widest truncate">{city.name}</span>
+              </div>
+              <div className="text-[#5C4E38] text-xs orda-inter">{t("map.lockedTooltip")}</div>
+            </div>
+          );
+        }
+
         const progress = cityProgress?.[city.slug];
         const statusLabel = progress
           ? progress.status === "completed" ? t("map.status.completed")
           : progress.status === "in_progress" ? t("map.status.inProgress")
           : t("map.status.notStarted")
           : null;
-        const statusColor = progress?.status === "completed" ? "#6FCF97" : progress?.status === "in_progress" ? "#57D6D1" : "#B7BAC3";
+        const statusColor = progress?.status === "completed" ? "#7C8B5A" : progress?.status === "in_progress" ? "#6B8CA3" : "#5C4E38";
         return (
           <div className="absolute bottom-4 left-4 right-4 sm:right-auto glass rounded-[14px] px-4 py-3 pointer-events-none animate-fade-in"
             style={{ maxWidth: "min(260px, 100%)" }}>
-            <div className="text-[#D4AF37] text-xs orda-cinzel tracking-widest mb-1 truncate">{city.name}</div>
-            <div className="text-[#B7BAC3] text-xs orda-inter truncate">{city.subtitle}</div>
+            <div className="text-[#B8892B] text-xs orda-cinzel tracking-widest mb-1 truncate">{city.name}</div>
+            <div className="text-[#5C4E38] text-xs orda-inter truncate">{city.subtitle}</div>
             {progress && (
               <div className="flex items-center justify-between mt-2 mb-1">
                 <span className="text-[10px] orda-inter" style={{ color: statusColor }}>{statusLabel}</span>
-                <span className="text-[10px] orda-cinzel text-[#D4AF37]">{progress.percent}%</span>
+                <span className="text-[10px] orda-cinzel text-[#B8892B]">{progress.percent}%</span>
               </div>
             )}
-            <div className="text-[#B7BAC3] text-xs orda-inter mt-1">{t("map.clickToExplore")}</div>
+            <div className="text-[#5C4E38] text-xs orda-inter mt-1">{t("map.clickToExplore")}</div>
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+// ─── ORACLE WIDGET ──────────────────────────────────────────────────────────
+// A condensed, always-on-screen sibling of the full AIHistorian page (App.tsx,
+// further down) — same data/hooks, a narrow "carved wooden lectern" frame
+// instead of a full chat page, and a link out to the full page for long reading.
+function OracleWidget({ onNav }: { onNav: (v: View) => void }) {
+  const { t, i18n } = useTranslation();
+  const chatMutation = useChatMutation();
+  const language = (i18n.resolvedLanguage || DEFAULT_LANGUAGE) as ApiLanguage;
+  const { data: promptsData } = useSuggestedPrompts(language);
+  const { activeCityId } = useActiveCity();
+  const { data: citiesData } = useCities();
+  const activeCity = activeCityId ? (citiesData?.data || []).find((c) => c.id === activeCityId) : null;
+  const [messages, setMessages] = useState<{ role: "ai" | "user"; text: string }[]>([
+    { role: "ai", text: t("aiHistorian.greeting") },
+  ]);
+  const [input, setInput] = useState("");
+  const [typing, setTyping] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const send = async () => {
+    if (!input.trim()) return;
+    const userMsg = input.trim();
+    setInput("");
+    setMessages(m => [...m, { role: "user", text: userMsg }]);
+    setTyping(true);
+    try {
+      const response = await chatMutation.mutateAsync({ message: userMsg, cityId: activeCityId });
+      setMessages(m => [...m, { role: "ai", text: response.answer }]);
+    } catch {
+      setMessages(m => [...m, { role: "ai", text: t("aiHistorian.unavailable") }]);
+    } finally {
+      setTyping(false);
+    }
+  };
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, typing]);
+
+  const suggestions = (promptsData?.length
+    ? promptsData.map((p) => p.prompt_text)
+    : (t("aiHistorian.suggestions", { returnObjects: true }) as string[])
+  ).slice(0, 2);
+
+  return (
+    <div className="rounded-[14px] overflow-hidden flex flex-col flex-1 min-h-0"
+      style={{ background: "#2E2013", border: "2px solid rgba(140,98,57,0.6)", boxShadow: "0 6px 20px rgba(46,32,19,0.35)" }}>
+
+      {/* Dark-wood header */}
+      <div className="flex items-center gap-2 px-4 py-3 flex-shrink-0"
+        style={{ background: "linear-gradient(180deg,#3B2A1A,#2E2013)", borderBottom: "1px solid rgba(184,137,43,0.3)" }}>
+        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+          style={{ background: "rgba(184,137,43,0.15)", border: "1px solid rgba(184,137,43,0.4)" }}>
+          <span className="text-xs">⚜</span>
+        </div>
+        <div className="min-w-0">
+          <div className="orda-cinzel text-xs font-bold tracking-wide" style={{ color: "#D8C79C" }}>{t("aiHistorian.title")}</div>
+          {activeCity && <div className="text-[9px] orda-inter truncate" style={{ color: "#9C8F72" }}>{activeCity.name}</div>}
+        </div>
+      </div>
+
+      {/* Parchment message pane, framed by the wood */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5" style={{ background: "#EADFC0" }}>
+        {messages.length === 1 && suggestions.length > 0 && (
+          <div className="space-y-1.5 mb-1">
+            {suggestions.map((s) => (
+              <button key={s} onClick={() => setInput(s)}
+                className="w-full text-left p-2 rounded-[10px] text-[11px] orda-inter leading-snug"
+                style={{ background: "rgba(184,137,43,0.08)", border: "1px solid rgba(59,42,19,0.12)", color: "#5C4E38" }}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} ai-bubble`}>
+            <div className={`max-w-[88%] rounded-[10px] px-3 py-2 ${msg.role === "user" ? "rounded-tr-[3px]" : "rounded-tl-[3px]"}`}
+              style={msg.role === "ai"
+                ? { background: "rgba(241,233,210,0.9)", border: "1px solid rgba(59,42,19,0.1)" }
+                : { background: "linear-gradient(135deg, rgba(184,137,43,0.22), rgba(184,137,43,0.12))", border: "1px solid rgba(184,137,43,0.3)" }}>
+              <p className="orda-inter text-[11px] text-[#2E2013] leading-relaxed">{msg.text}</p>
+            </div>
+          </div>
+        ))}
+        {typing && (
+          <div className="flex justify-start ai-bubble">
+            <div className="rounded-[10px] rounded-tl-[3px] px-3 py-2" style={{ background: "rgba(241,233,210,0.9)", border: "1px solid rgba(59,42,19,0.1)" }}>
+              <div className="flex gap-1 items-center h-3">
+                {[0, 0.2, 0.4].map((d, i) => (
+                  <div key={i} className="w-1 h-1 rounded-full bg-[#8C6239]" style={{ animation: `scroll-bounce 1.2s ease-in-out ${d}s infinite` }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input, still within the wooden frame */}
+      <div className="flex-shrink-0 p-2.5" style={{ background: "#2E2013", borderTop: "1px solid rgba(184,137,43,0.3)" }}>
+        <div className="flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full" style={{ background: "rgba(234,223,192,0.1)", border: "1px solid rgba(184,137,43,0.25)" }}>
+          <input
+            className="flex-1 bg-transparent outline-none text-[11px] py-1.5"
+            style={{ color: "#EADFC0" }}
+            placeholder={t("aiHistorian.placeholder")}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); send(); } }}
+          />
+          <button onClick={send} disabled={!input.trim()} aria-label={t("aiHistorian.sendMessage")}
+            className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors"
+            style={{ background: input.trim() ? "#B8892B" : "transparent", cursor: input.trim() ? "pointer" : "not-allowed" }}>
+            <Send size={12} color={input.trim() ? "#2E2013" : "#6B5B47"} />
+          </button>
+        </div>
+        <button onClick={() => onNav("ai")} className="w-full text-center mt-2 text-[9px] orda-inter tracking-wide hover:opacity-80 transition-opacity" style={{ color: "#9C8F72" }}>
+          {t("dashboard.openFullOracle")}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1617,61 +1867,54 @@ function InteractiveMap({ cities, onSelectCity, journey, completedCitySlugs, cit
 function Dashboard({ character, onSelectCity, onNav }: {
   character: CharType; onSelectCity: (c: City) => void; onNav: (v: View) => void;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const char = getCharacterData(t)[character];
   const { activeCityId } = useActiveCity();
+  const { user } = useAuthSession();
 
   const { data: citiesData, isLoading: citiesLoading } = useCities();
-  const { data: artifactsData, isLoading: artifactsLoading } = useArtifacts();
+  const { data: artifactsData } = useArtifacts();
   const { data: questsData, isLoading: questsLoading } = useQuests();
   const { summaryQuery, statsQuery, achievementsQuery } = useProgress();
-  const { notificationsQuery } = useNotifications();
-  const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
   const [mobileSheet, setMobileSheet] = useState<"left" | "right" | null>(null);
+  // "world"/"cities" both mean "stay on the map" (there's no separate all-cities
+  // page) — "timeline" swaps the sidebar's lower section to the journey log.
+  const [activeTab, setActiveTab] = useState<"world" | "cities" | "timeline">("world");
+  const cityStripRef = useRef<HTMLDivElement>(null);
   const cities = (citiesData?.data || []).map((c) => mapApiCity(c, t));
   const cityNameById = (id: string) => cities.find(c => c.id === id)?.name || t("common.unknown");
   const activeCity = activeCityId ? cities.find(c => c.id === activeCityId) || null : null;
-
-  // Recent Artifacts scopes to the active city once one is selected — everywhere
-  // else in the app does the same, so this panel never shows a city the rest of
-  // the screen disagrees with.
-  const artifactsForCity = activeCityId
-    ? (artifactsData?.data || []).filter(a => a.city_id === activeCityId)
-    : (artifactsData?.data || []);
-  const artifacts = artifactsForCity
-    .slice(0, 3)
-    .map(a => mapApiArtifact(a, cityNameById(a.city_id), t));
+  const artifactsList = artifactsData?.data || [];
+  const questsList = questsData?.data || [];
 
   const summary = summaryQuery.data;
   const stats = statsQuery.data;
   const records = summary?.records;
   const totalQuests = questsData?.meta.total ?? 0;
   const questsCompleted = countCompletedByType(records, "quest");
-  const artifactsCollected = countCompletedByType(records, "artifact");
 
   // A city counts as "unlocked" once the player has completed at least one quest
   // there — there's no separate city-visit tracking, so this is derived from real
   // quest-completion data (the same source the map's route coloring below uses).
   const completedCitySlugs = new Set(
-    (questsData?.data || [])
+    questsList
       .filter(q => q.completion_status === "completed")
       .map(q => cities.find(c => c.id === q.city_id)?.slug)
       .filter((slug): slug is string => Boolean(slug))
   );
-  const citiesVisited = completedCitySlugs.size;
+  const openedCitiesCount = cities.filter(c => c.isUnlocked !== false).length;
 
   const journeyPercent = calculateJourneyProgress({
-    unlockedCities: citiesVisited,
+    unlockedCities: completedCitySlugs.size,
     totalCities: cities.length,
     completedQuests: questsCompleted,
     totalQuests,
   });
-  const questsPercent = totalQuests > 0 ? Math.round((questsCompleted / totalQuests) * 100) : 0;
 
   // Prefer a quest from the active city once one is selected — same "single source
   // of truth" rule as everything else on this screen. Falls back to the first
   // incomplete quest anywhere once no city has been picked yet.
-  const incompleteQuests = (questsData?.data || [])
+  const incompleteQuests = questsList
     .map(q => ({ ...mapApiQuest(q, cityNameById(q.city_id)), completionStatus: q.completion_status, city_id: q.city_id }))
     .filter(q => q.completionStatus !== "completed");
   const activeQuest =
@@ -1679,13 +1922,20 @@ function Dashboard({ character, onSelectCity, onNav }: {
     incompleteQuests[0] ||
     null;
 
-  const achievements = (achievementsQuery.data || []).slice(0, 3);
-  const notifications = (notificationsQuery.data?.data || []).slice(0, 3);
+  // Chronological journey log for the Timeline tab — same source/pattern as the
+  // Passport page's own timeline (see describeProgressRecord below).
+  const timeline = (records || [])
+    .filter(r => r.completed_at)
+    .slice()
+    .sort((a, b) => new Date(b.completed_at as string).getTime() - new Date(a.completed_at as string).getTime())
+    .slice(0, 8);
+  const achievements = achievementsQuery.data || [];
 
-  // Per-city completion %, feeding the map tooltip's status/percent lines —
-  // `Map` the class is shadowed by the lucide-react icon import in this file.
+  // Per-city completion %, feeding the map tooltip's status/percent lines and the
+  // active-city "exam progress" bar below — `Map` the class is shadowed by the
+  // `Map` icon imported from lucide-react above.
   const questsByCityId = new globalThis.Map<string, ApiQuest[]>();
-  (questsData?.data || []).forEach((q) => {
+  questsList.forEach((q) => {
     const list = questsByCityId.get(q.city_id) || [];
     list.push(q);
     questsByCityId.set(q.city_id, list);
@@ -1700,196 +1950,237 @@ function Dashboard({ character, onSelectCity, onNav }: {
       total === 0 || completed === 0 ? "not_started" : completed === total ? "completed" : "in_progress";
     cityProgress[city.slug] = { percent, status };
   });
+  const activeCityProgress = activeCity ? cityProgress[activeCity.slug] : undefined;
 
   const closeMobileSheet = () => setMobileSheet(null);
+  const NAV_TABS: { key: "world" | "cities" | "current" | "artifacts" | "timeline"; label: string; icon: typeof Globe }[] = [
+    { key: "world", label: t("dashboard.tabs.world"), icon: Globe },
+    { key: "cities", label: t("dashboard.tabs.cities"), icon: Compass },
+    { key: "current", label: t("dashboard.tabs.currentCity"), icon: MapPin },
+    { key: "artifacts", label: t("dashboard.tabs.artifacts"), icon: Package },
+    { key: "timeline", label: t("dashboard.tabs.timeline"), icon: Clock },
+  ];
+  const handleTabClick = (key: typeof NAV_TABS[number]["key"]) => {
+    if (key === "artifacts") { onNav("artifacts"); return; }
+    if (key === "current") { if (activeCity) onSelectCity(activeCity); return; }
+    if (key === "cities") { setActiveTab("cities"); cityStripRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); return; }
+    setActiveTab(key);
+  };
 
   return (
-    <div className="h-screen pt-16 flex flex-col overflow-hidden" style={{ background: "#0F1115" }}>
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[260px_1fr_280px] gap-0 overflow-hidden">
+    <div className="h-screen pt-16 flex flex-col overflow-hidden" style={{ background: "#EDE1C4" }}>
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[280px_1fr_300px] gap-0 overflow-hidden">
 
         {/* Mobile drawer backdrop */}
         {mobileSheet && (
-          <div className="fixed inset-0 z-30 md:hidden" style={{ background: "rgba(0,0,0,0.6)" }} onClick={closeMobileSheet} />
+          <div className="fixed inset-0 z-30 md:hidden" style={{ background: "rgba(46,32,19,0.55)" }} onClick={closeMobileSheet} />
         )}
 
-        {/* Left Sidebar */}
+        {/* Left Sidebar — the explorer's passport */}
         <aside
           className={`${mobileSheet === "left" ? "flex fixed inset-x-0 bottom-0 z-40 max-h-[70vh] rounded-t-[24px] animate-slide-up" : "hidden"} md:flex md:static md:max-h-none md:rounded-none md:z-auto order-2 md:order-1 overflow-y-auto border-b md:border-b-0 md:border-r flex-col gap-4 p-5`}
-          style={{ borderColor: "rgba(255,255,255,0.06)", background: "#0D1017" }}>
+          style={{ borderColor: "rgba(59,42,19,0.18)", background: "#DCCBA0" }}>
 
-          {/* Character badge */}
-          <div className="rounded-[16px] p-4 flex items-center gap-3"
-            style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center"
-              style={{ background: `linear-gradient(135deg, ${char.color}20, ${char.color}08)`, border: `1px solid ${char.color}25` }}>
-              <char.icon size={22} color={char.color} />
-            </div>
-            <div>
-              <div className="text-[#F6F4EC] text-sm font-semibold orda-cinzel">{char.name}</div>
-              <div className="text-[10px] text-[#B7BAC3] orda-inter">{char.title}</div>
-            </div>
-          </div>
-
-          {/* Active City — the one shared source of truth every other panel here
-              (quests, artifacts, map highlight, bottom carousel) reads from. */}
-          <div className="rounded-[16px] p-4" style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.12)" }}>
-            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-2">{t("dashboard.activeCity")}</div>
-            {activeCity ? (
-              <div>
-                <div className="flex items-center justify-between">
-                  <div className="text-[#F6F4EC] text-sm font-semibold orda-cinzel">{activeCity.name}</div>
-                  <span className="text-[#D4AF37] text-xs orda-cinzel font-semibold">
-                    {cityProgress[activeCity.slug]?.percent ?? 0}%
-                  </span>
-                </div>
-                <p className="text-[10px] orda-inter text-[#B7BAC3] mt-1 truncate">{activeCity.subtitle}</p>
-                <button onClick={() => onSelectCity(activeCity)}
-                  className="mt-2 w-full py-1.5 rounded-lg text-[10px] orda-cinzel tracking-widest text-[#D4AF37] hover:bg-[#D4AF3714] transition-colors">
-                  {t("dashboard.viewCityDetails")}
-                </button>
+          {/* Player card: avatar, level, XP, coins, notifications */}
+          <div className="rounded-[16px] p-4" style={{ background: "rgba(241,233,210,0.6)", border: "1px solid rgba(59,42,19,0.14)" }}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center overflow-hidden flex-shrink-0"
+                style={{ background: `linear-gradient(135deg, ${char.color}25, ${char.color}0a)`, border: `2px solid ${char.color}45` }}>
+                {user?.avatar_url ? (
+                  <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <char.icon size={20} color={char.color} />
+                )}
               </div>
-            ) : (
-              <p className="text-[11px] orda-inter text-[#B7BAC3]">{t("dashboard.noActiveCity")}</p>
-            )}
-          </div>
-
-          {/* Journey Progress */}
-          <div className="rounded-[16px] p-4" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs orda-cinzel tracking-widest text-[#B7BAC3]">{t("dashboard.journey")}</span>
-              <span className="text-[#D4AF37] text-sm font-semibold orda-cinzel">{journeyPercent}%</span>
-            </div>
-            <div className="w-full h-1.5 rounded-full mb-3" style={{ background: "rgba(255,255,255,0.06)" }}>
-              <div className="h-full rounded-full progress-bar-fill"
-                style={{ width: `${journeyPercent}%`, background: "linear-gradient(90deg,#D4AF37,#C9962C)" }} />
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {[[`${citiesVisited}/${cities.length}`, t("dashboard.statCities")], [`${artifactsCollected}`, t("dashboard.statArtifacts")], [`${questsCompleted}`, t("dashboard.statQuests")]].map(([v, l]) => (
-                <div key={l} className="text-center">
-                  <div className="text-[#D4AF37] text-sm font-bold orda-cinzel">{v}</div>
-                  <div className="text-[#B7BAC3] text-[10px] orda-inter">{l}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Current Quest */}
-          <div>
-            <div className="flex items-center justify-between mb-3 px-1">
-              <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">{t("dashboard.activeQuest")}</span>
-              <button onClick={() => onNav("quests")} className="text-[10px] text-[#D4AF37] orda-inter hover:opacity-70">{t("common.seeAll")}</button>
-            </div>
-            {questsLoading ? (
-              <div className="rounded-[14px] p-4" style={{ background: "rgba(15,17,21,0.5)", border: "1px solid rgba(255,255,255,0.04)" }}>
-                <div className="h-3 w-32 rounded-full mb-2" style={{ background: "rgba(255,255,255,0.05)" }} />
-                <div className="h-2 w-full rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
+              <div className="min-w-0 flex-1">
+                <div className="text-[#2E2013] text-sm font-semibold orda-cinzel truncate">{user?.username || char.name}</div>
+                <div className="text-[10px] text-[#5C4E38] orda-inter">{t("dashboard.level", { level: stats?.level ?? 1 })}</div>
               </div>
-            ) : activeQuest ? (
-              <div className="quest-card rounded-[14px] p-4 cursor-pointer"
-                style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.12)" }}
-                onClick={() => onNav("quests")}>
-                <div className="flex items-start gap-2 mb-2">
-                  <Zap size={14} color="#D4AF37" className="mt-0.5 flex-shrink-0" />
-                  <div>
-                    <div className="text-[#F6F4EC] text-xs font-semibold orda-cinzel">{activeQuest.title}</div>
-                    <div className="text-[#B7BAC3] text-[11px] orda-inter mt-1 leading-relaxed line-clamp-2">{activeQuest.description}</div>
+              <NotificationBell />
+            </div>
+
+            {/* XP bar — a progress scroll, grounded in the same journey-completion
+                percent used elsewhere (there's no separate xp-to-next-level curve
+                in the API, so this stays honestly labeled as journey progress). */}
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-[9px] orda-cinzel tracking-[0.15em] text-[#5C4E38]">{t("dashboard.journey")}</span>
+              <span className="text-[10px] orda-cinzel text-[#B8892B] font-semibold">{stats?.xp ?? 0} XP</span>
+            </div>
+            <div className="w-full h-2 rounded-full mb-3" style={{ background: "rgba(59,42,19,0.1)", border: "1px solid rgba(59,42,19,0.08)" }}>
+              <div className="h-full rounded-full progress-bar-fill" style={{ width: `${journeyPercent}%`, background: "linear-gradient(90deg,#B8892B,#8C6239)" }} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg" style={{ background: "rgba(184,137,43,0.08)" }}>
+                <Coins size={13} color="#B8892B" />
+                <span className="text-xs orda-cinzel text-[#2E2013] font-semibold">{stats?.coins ?? 0}</span>
+              </div>
+              <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg" style={{ background: "rgba(184,137,43,0.08)" }}>
+                <MapPin size={13} color="#B8892B" />
+                <span className="text-xs orda-cinzel text-[#2E2013] font-semibold">{openedCitiesCount}/{cities.length}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar tab switcher — mirrors the bottom nav's Timeline tab */}
+          <div className="flex rounded-full p-1" style={{ background: "rgba(59,42,19,0.06)" }}>
+            {(["city", "timeline"] as const).map((tab) => (
+              <button key={tab}
+                onClick={() => setActiveTab(tab === "city" ? "world" : "timeline")}
+                className={`flex-1 py-1.5 rounded-full text-[10px] orda-cinzel tracking-wide transition-colors ${
+                  (tab === "city" ? activeTab !== "timeline" : activeTab === "timeline") ? "tab-active" : "tab-inactive"
+                }`}
+                style={(tab === "city" ? activeTab !== "timeline" : activeTab === "timeline") ? { background: "#B8892B", color: "#EDE1C4", borderBottom: "none" } : { borderBottom: "none" }}>
+                {tab === "city" ? t("dashboard.tabs.currentCity") : t("dashboard.tabs.timeline")}
+              </button>
+            ))}
+          </div>
+
+          {activeTab !== "timeline" ? (
+            /* Current-city card: illustration, summary, exam progress, mission */
+            activeCity ? (
+              <div className="rounded-[16px] overflow-hidden" style={{ background: "rgba(241,233,210,0.6)", border: "1px solid rgba(59,42,19,0.14)" }}>
+                <div className="h-28 relative">
+                  {activeCity.imageUrl ? (
+                    <img src={activeCity.imageUrl} alt={activeCity.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full" style={{ background: `linear-gradient(135deg, ${activeCity.color}30, #DCCBA0)` }} />
+                  )}
+                  <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, transparent 40%, rgba(46,32,19,0.55) 100%)" }} />
+                  <div className="absolute bottom-2 left-3 right-3">
+                    <div className="text-white text-sm font-bold orda-cinzel" style={{ textShadow: "0 1px 4px rgba(0,0,0,0.6)" }}>{activeCity.name}</div>
                   </div>
                 </div>
-                <div className="flex items-center justify-between mt-3">
-                  <span className="badge-gold text-[9px]">+{activeQuest.xp} XP</span>
-                  <span className="text-[#57D6D1] text-[10px] orda-inter">{activeQuest.city}</span>
+                <div className="p-4">
+                  <p className="text-[11px] orda-inter text-[#5C4E38] leading-relaxed line-clamp-3 mb-3">{activeCity.description}</p>
+
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-[9px] orda-cinzel tracking-[0.15em] text-[#5C4E38]">{t("dashboard.examProgress")}</span>
+                    <span className="text-[10px] orda-cinzel text-[#B8892B] font-semibold">{activeCityProgress?.percent ?? 0}%</span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full mb-3" style={{ background: "rgba(59,42,19,0.1)" }}>
+                    <div className="h-full rounded-full progress-bar-fill" style={{ width: `${activeCityProgress?.percent ?? 0}%`, background: "linear-gradient(90deg,#B8892B,#8C6239)" }} />
+                  </div>
+
+                  {questsLoading ? (
+                    <div className="h-10 rounded-lg mb-3" style={{ background: "rgba(59,42,19,0.05)" }} />
+                  ) : activeQuest ? (
+                    <div className="rounded-lg p-2.5 mb-3" style={{ background: "rgba(184,137,43,0.06)", border: "1px solid rgba(184,137,43,0.12)" }}>
+                      <div className="text-[10px] orda-cinzel tracking-widest text-[#5C4E38] mb-1">{t("dashboard.currentMission")}</div>
+                      <div className="text-xs orda-cinzel text-[#2E2013] font-semibold">{activeQuest.title}</div>
+                      <span className="badge-gold text-[9px] mt-1 inline-block">+{activeQuest.xp} XP</span>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] orda-inter text-[#5C4E38] mb-3">{t("dashboard.noQuests")}</p>
+                  )}
+
+                  <button onClick={() => onNav("quests")} className="btn-primary w-full text-[11px] py-2.5 flex items-center justify-center gap-2">
+                    <ScrollText size={13} /> {t("dashboard.openExamination")}
+                  </button>
                 </div>
               </div>
             ) : (
-              <div className="rounded-[14px] p-4 text-center" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
-                <p className="text-[11px] orda-inter text-[#B7BAC3]">{t("dashboard.noQuests")}</p>
+              <div className="rounded-[16px] p-4 text-center" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.1)" }}>
+                <p className="text-[11px] orda-inter text-[#5C4E38]">{t("dashboard.noActiveCity")}</p>
               </div>
-            )}
-          </div>
-
-          {/* Recent Artifacts */}
-          <div>
-            <div className="flex items-center justify-between mb-3 px-1">
-              <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">{t("dashboard.artifactsLabel")}</span>
-              <button onClick={() => onNav("artifacts")} className="text-[10px] text-[#D4AF37] orda-inter hover:opacity-70">{t("common.seeAll")}</button>
-            </div>
-            <div className="space-y-2">
-              {(artifactsLoading ? Array.from({ length: 3 }) : artifacts).map((a, index) => (
-                artifactsLoading || !a ? (
-                  <div key={`artifact-skeleton-${index}`} className="rounded-[14px] p-3" style={{ background: "rgba(15,17,21,0.5)", border: "1px solid rgba(255,255,255,0.04)" }}>
-                    <div className="w-full h-16 rounded-[10px] mb-3" style={{ background: "rgba(255,255,255,0.04)" }} />
-                    <div className="h-2 w-20 rounded-full mb-2" style={{ background: "rgba(255,255,255,0.05)" }} />
-                    <div className="h-2 w-28 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
+            )
+          ) : (
+            /* Timeline tab: achievements + completed-quest/artifact/city log */
+            <div className="flex-1 min-h-0 flex flex-col gap-4">
+              {achievements.length > 0 && (
+                <div>
+                  <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#5C4E38] mb-2 px-1">{t("dashboard.achievementsLabel")}</div>
+                  <div className="space-y-2">
+                    {achievements.slice(0, 3).map((a) => (
+                      <div key={a.id} className="flex items-center gap-3 p-2 rounded-xl" style={{ background: "rgba(184,137,43,0.06)" }}>
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "rgba(184,137,43,0.15)" }}>
+                          <Award size={13} color="#B8892B" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs orda-cinzel text-[#2E2013] truncate">{a.title}</div>
+                          <div className="text-[10px] orda-inter text-[#5C4E38] truncate">{a.description}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex-1 min-h-0">
+                <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#5C4E38] mb-2 px-1">{t("dashboard.journeyLog")}</div>
+                {summaryQuery.isLoading ? (
+                  <div className="h-16 rounded-xl" style={{ background: "rgba(59,42,19,0.03)" }} />
+                ) : timeline.length > 0 ? (
+                  <div className="relative">
+                    <div className="absolute left-[5px] top-1 bottom-1 w-px" style={{ background: "rgba(184,137,43,0.25)" }} />
+                    <div className="space-y-3">
+                      {timeline.map((record) => (
+                        <div key={record.id} className="flex items-start gap-3">
+                          <div className="w-[11px] h-[11px] rounded-full mt-0.5 flex-shrink-0" style={{ background: "#B8892B" }} />
+                          <div className="min-w-0">
+                            <p className="text-xs orda-inter text-[#2E2013]">{describeProgressRecord(t, record, cities, artifactsList, questsList)}</p>
+                            <p className="text-[10px] orda-inter text-[#5C4E38]">{new Date(record.completed_at as string).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : (
-                  <div key={a.id} className="flex items-center gap-3 p-2.5 rounded-xl cursor-pointer hover:bg-white/[0.03] transition-colors"
-                    onClick={() => setSelectedArtifact(a)}>
-                    <span className="text-lg">{a.icon}</span>
-                    <div>
-                      <div className="text-[#F6F4EC] text-xs orda-cinzel">{a.name}</div>
-                      <div className="text-[#B7BAC3] text-[10px] orda-inter">{a.category}</div>
-                    </div>
-                  </div>
-                )
-              ))}
+                  <p className="text-[11px] orda-inter text-[#5C4E38] px-1">{t("dashboard.noQuests")}</p>
+                )}
+              </div>
             </div>
-          </div>
-
-          {/* Achievements */}
-          <div>
-            <div className="flex items-center justify-between mb-3 px-1">
-              <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">{t("dashboard.achievementsLabel")}</span>
-              <button onClick={() => onNav("passport")} className="text-[10px] text-[#D4AF37] orda-inter hover:opacity-70">{t("common.seeAll")}</button>
-            </div>
-            <div className="space-y-2">
-              {achievementsQuery.isLoading ? (
-                Array.from({ length: 2 }).map((_, i) => (
-                  <div key={`achievement-skeleton-${i}`} className="h-9 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }} />
-                ))
-              ) : achievements.length > 0 ? (
-                achievements.map((achievement) => (
-                  <div key={achievement.id} className="flex items-center gap-3 p-2 rounded-xl"
-                    style={{ background: "rgba(212,175,55,0.05)" }}>
-                    <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-                      style={{ background: "rgba(212,175,55,0.15)" }}>
-                      <Check size={13} color="#D4AF37" />
-                    </div>
-                    <div>
-                      <div className="text-xs orda-cinzel text-[#F6F4EC]">{achievement.title}</div>
-                      <div className="text-[10px] orda-inter text-[#B7BAC3]">{achievement.description}</div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-[11px] orda-inter text-[#B7BAC3] px-1">{t("dashboard.noAchievements")}</p>
-              )}
-            </div>
-          </div>
+          )}
         </aside>
 
         {/* Map Center */}
         <main className="order-1 lg:order-2 p-4 flex flex-col overflow-hidden min-h-[360px] relative">
           <div className="mb-3">
-            <h2 className="orda-cinzel text-base font-bold text-[#F6F4EC] tracking-wider">{t("dashboard.interactiveMap")}</h2>
-            <p className="text-xs text-[#B7BAC3] orda-inter">{t("dashboard.mapSubtitle")}</p>
+            <h2 className="orda-cinzel text-base font-bold text-[#2E2013] tracking-wider">{t("dashboard.interactiveMap")}</h2>
+            <p className="text-xs text-[#5C4E38] orda-inter">{t("dashboard.mapSubtitle")}</p>
           </div>
           <div className="flex-1 min-h-0">
             <InteractiveMap cities={cities} onSelectCity={onSelectCity} journey={character} completedCitySlugs={completedCitySlugs} cityProgress={cityProgress} activeCityId={activeCityId} />
           </div>
+
+          {/* Bottom navigation — rounded parchment tabs, gold active state */}
+          <div className="mt-3 flex justify-center">
+            <div className="inline-flex rounded-full p-1 gap-1" style={{ background: "rgba(220,203,160,0.7)", border: "1px solid rgba(59,42,19,0.14)" }}>
+              {NAV_TABS.map(({ key, label, icon: Icon }) => {
+                const isActive = key === "world" ? activeTab === "world" : key === "cities" ? activeTab === "cities" : key === "timeline" ? activeTab === "timeline" : false;
+                const isDisabled = key === "current" && !activeCity;
+                return (
+                  <button key={key} onClick={() => handleTabClick(key)} disabled={isDisabled}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] orda-cinzel tracking-wide transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={isActive ? { background: "#B8892B", color: "#EDE1C4" } : { color: "#5C4E38" }}>
+                    <Icon size={12} />
+                    <span className="hidden sm:inline">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* City quick-access row — the active one stays visually distinct from the rest */}
-          <div className="mt-3 flex gap-3 overflow-x-auto pb-1">
+          <div ref={cityStripRef} className="mt-3 flex gap-3 overflow-x-auto pb-1">
             {(citiesLoading ? Array.from({ length: 6 }) : cities).map((city, index) => (
               citiesLoading || !city ? (
-                <div key={`city-skeleton-${index}`} className="rounded-[12px] px-3 py-2 h-9 w-24 flex-shrink-0" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }} />
+                <div key={`city-skeleton-${index}`} className="rounded-[12px] px-3 py-2 h-9 w-24 flex-shrink-0" style={{ background: "rgba(59,42,19,0.04)", border: "1px solid rgba(59,42,19,0.06)" }} />
+              ) : city.isUnlocked === false ? (
+                <button key={city.id} disabled title={t("map.lockedTooltip")}
+                  className="flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl text-xs orda-cinzel tracking-wide opacity-40 blur-[0.5px]"
+                  style={{ background: "rgba(241,233,210,0.3)", border: "1px solid rgba(59,42,19,0.04)", color: "#9C8F72", cursor: "not-allowed" }}>
+                  <span className="text-[11px]">🔒</span>
+                  {city.name}
+                </button>
               ) : (
                 <button key={city.id} onClick={() => onSelectCity(city)}
-                  className="flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl text-xs orda-cinzel tracking-wide transition-all hover:border-[#D4AF3750] hover:text-[#D4AF37]"
+                  className="flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-xl text-xs orda-cinzel tracking-wide transition-all hover:border-[#B8892B50] hover:text-[#B8892B]"
                   style={{
-                    background: city.id === activeCityId ? "rgba(212,175,55,0.12)" : "rgba(34,38,47,0.6)",
-                    border: `1px solid ${city.id === activeCityId ? "rgba(212,175,55,0.4)" : "rgba(255,255,255,0.06)"}`,
-                    color: city.id === activeCityId ? "#D4AF37" : "#B7BAC3",
+                    background: city.id === activeCityId ? "rgba(184,137,43,0.12)" : "rgba(241,233,210,0.6)",
+                    border: `1px solid ${city.id === activeCityId ? "rgba(184,137,43,0.4)" : "rgba(59,42,19,0.06)"}`,
+                    color: city.id === activeCityId ? "#B8892B" : "#5C4E38",
                   }}>
-                  <MapPin size={11} color="#D4AF37" />
+                  <MapPin size={11} color="#B8892B" />
                   {city.name}
                 </button>
               )
@@ -1899,87 +2190,23 @@ function Dashboard({ character, onSelectCity, onNav }: {
           {/* Mobile sidebar toggles */}
           <div className="md:hidden absolute bottom-20 left-3 right-3 flex justify-between pointer-events-none">
             <button onClick={() => setMobileSheet(mobileSheet === "left" ? null : "left")}
-              className="pointer-events-auto glass rounded-full px-4 py-2 text-[11px] orda-cinzel tracking-wide text-[#D4AF37] flex items-center gap-1.5">
-              <Zap size={12} /> {t("dashboard.mobileQuestsPanel")}
+              className="pointer-events-auto glass rounded-full px-4 py-2 text-[11px] orda-cinzel tracking-wide text-[#B8892B] flex items-center gap-1.5">
+              <User size={12} /> {t("dashboard.mobileQuestsPanel")}
             </button>
             <button onClick={() => setMobileSheet(mobileSheet === "right" ? null : "right")}
-              className="pointer-events-auto glass rounded-full px-4 py-2 text-[11px] orda-cinzel tracking-wide text-[#D4AF37] flex items-center gap-1.5">
-              <Bell size={12} /> {t("dashboard.mobileProgressPanel")}
+              className="pointer-events-auto glass rounded-full px-4 py-2 text-[11px] orda-cinzel tracking-wide text-[#B8892B] flex items-center gap-1.5">
+              <MessageSquare size={12} /> {t("aiHistorian.title")}
             </button>
           </div>
         </main>
 
-        {/* Right Panel */}
+        {/* Right Panel — AI Oracle */}
         <aside
-          className={`${mobileSheet === "right" ? "flex fixed inset-x-0 bottom-0 z-40 max-h-[70vh] rounded-t-[24px] animate-slide-up" : "hidden"} lg:flex lg:static lg:max-h-none lg:rounded-none lg:z-auto order-3 overflow-y-auto border-t lg:border-t-0 lg:border-l flex-col gap-4 p-5`}
-          style={{ borderColor: "rgba(255,255,255,0.06)", background: "#0D1017" }}>
-
-          {/* Progress rings */}
-          <div className="rounded-[16px] p-4" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-            <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-4">{t("dashboard.explorerLevel")}</div>
-            <div className="flex items-center justify-center gap-6">
-              <div className="flex flex-col items-center gap-2">
-                <div className="relative">
-                  <ProgressRing value={journeyPercent} size={72} />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-sm font-bold orda-cinzel text-[#D4AF37]">{journeyPercent}%</span>
-                  </div>
-                </div>
-                <span className="text-[10px] text-[#B7BAC3] orda-inter">{t("dashboard.journeyLabel")}</span>
-              </div>
-              <div className="flex flex-col items-center gap-2">
-                <div className="relative">
-                  <ProgressRing value={questsPercent} size={72} />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-sm font-bold orda-cinzel text-[#D4AF37]">{questsPercent}%</span>
-                  </div>
-                </div>
-                <span className="text-[10px] text-[#B7BAC3] orda-inter">{t("dashboard.questsLabel")}</span>
-              </div>
-            </div>
-            <div className="mt-4 p-3 rounded-xl text-center"
-              style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.1)" }}>
-              <div className="text-[#D4AF37] text-sm font-bold orda-cinzel">{t("dashboard.level", { level: stats?.level ?? 1 })}</div>
-              <div className="text-[#B7BAC3] text-[10px] orda-inter">{t("dashboard.xpEarned", { xp: stats?.xp ?? 0 })}</div>
-            </div>
-          </div>
-
-          {/* Notifications */}
-          <div className="flex-1 min-h-0">
-            <div className="flex items-center justify-between mb-3 px-1">
-              <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">{t("dashboard.notifications")}</span>
-              <button onClick={() => onNav("notifications")} className="text-[10px] text-[#D4AF37] orda-inter hover:opacity-70">{t("common.seeAll")}</button>
-            </div>
-            <div className="space-y-2">
-              {notificationsQuery.isLoading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <div key={`notification-skeleton-${i}`} className="h-12 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }} />
-                ))
-              ) : notifications.length > 0 ? (
-                notifications.map((n) => {
-                  const Icon = TYPE_ICON[n.type] ?? Bell;
-                  return (
-                    <div key={n.id} className="flex items-start gap-3 p-3 rounded-xl hover:bg-white/[0.02] cursor-pointer transition-colors"
-                      onClick={() => onNav("notifications")}>
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-                        style={{ background: n.is_read ? "rgba(255,255,255,0.04)" : "rgba(212,175,55,0.12)" }}>
-                        <Icon size={13} color={n.is_read ? "#B7BAC3" : "#D4AF37"} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs orda-inter text-[#F6F4EC] leading-relaxed line-clamp-2">{n.title}</p>
-                        <span className="text-[10px] orda-inter text-[#B7BAC3]">{formatRelativeTime(n.created_at, i18n.resolvedLanguage || "en")}</span>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <p className="text-[11px] orda-inter text-[#B7BAC3] px-1">{t("dashboard.noNotifications")}</p>
-              )}
-            </div>
-          </div>
+          className={`${mobileSheet === "right" ? "flex fixed inset-x-0 bottom-0 z-40 max-h-[70vh] rounded-t-[24px] animate-slide-up" : "hidden"} lg:flex lg:static lg:max-h-none lg:rounded-none lg:z-auto order-3 flex-col min-h-0 p-4`}
+          style={{ borderLeft: "1px solid rgba(59,42,19,0.18)", background: "#DCCBA0" }}>
+          <OracleWidget onNav={onNav} />
         </aside>
       </div>
-      <ArtifactDetailModal artifact={selectedArtifact} onClose={() => setSelectedArtifact(null)} />
     </div>
   );
 }
@@ -2016,11 +2243,11 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
   ];
 
   return (
-    <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#0F1115" }}>
+    <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#EDE1C4" }}>
       {/* Hero Banner */}
       <div className="relative min-h-[300px] sm:h-72 overflow-hidden">
         <div className="absolute inset-0"
-          style={{ background: "linear-gradient(135deg, #1A1C14 0%, #0F1115 50%, #141018 100%)" }} />
+          style={{ background: "linear-gradient(135deg, #DCCBA0 0%, #EDE1C4 50%, #DCCBA0 100%)" }} />
         <div className="absolute inset-0"
           style={{ background: `radial-gradient(ellipse at 30% 60%, ${city.color}18 0%, transparent 60%)` }} />
 
@@ -2037,14 +2264,14 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
         </svg>
 
         <div className="relative z-10 h-full flex flex-col justify-end px-8 lg:px-16 pb-8">
-          <button onClick={onBack} className="flex items-center gap-2 text-sm text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors mb-4 orda-inter">
+          <button onClick={onBack} className="flex items-center gap-2 text-sm text-[#5C4E38] hover:text-[#2E2013] transition-colors mb-4 orda-inter">
             <ChevronLeft size={16} /> {t("city.backToMap")}
           </button>
           <div className="flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-6">
             <div>
               <div className="badge-gold mb-3">{t("city.goldenHordeCity")}</div>
-              <h1 className="orda-cinzel text-3xl sm:text-4xl md:text-5xl font-bold text-[#F6F4EC] mb-2 gold-glow-text">{city.name}</h1>
-              <p className="orda-cormorant text-xl text-[#D4AF37] italic">{city.subtitle}</p>
+              <h1 className="orda-cinzel text-3xl sm:text-4xl md:text-5xl font-bold text-[#2E2013] mb-2 gold-glow-text">{city.name}</h1>
+              <p className="orda-cormorant text-xl text-[#B8892B] italic">{city.subtitle}</p>
             </div>
             <div className="sm:ml-auto flex flex-wrap gap-3 flex-shrink-0">
               <button onClick={() => onNav("quests")} className="btn-primary text-sm py-3 px-6 flex items-center gap-2">
@@ -2060,7 +2287,7 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
 
       {/* Tabs */}
       <div className="border-b px-8 lg:px-16 flex gap-6 sm:gap-8 overflow-x-auto"
-        style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+        style={{ borderColor: "rgba(59,42,19,0.06)" }}>
         {(["overview", "timeline", "gallery", "stats"] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={`py-4 text-sm orda-cinzel tracking-wider capitalize transition-all duration-200 flex-shrink-0 whitespace-nowrap ${activeTab === tab ? "tab-active" : "tab-inactive"}`}>
@@ -2074,31 +2301,31 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-slide-up">
             <div className="lg:col-span-2 space-y-6">
               {/* Description */}
-              <div className="rounded-[20px] p-7" style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <h2 className="orda-cinzel text-lg font-semibold text-[#F6F4EC] mb-4">{t("city.historicalOverview")}</h2>
-                <p className="orda-inter text-[#B7BAC3] leading-[1.85] text-base">{city.description}</p>
+              <div className="rounded-[20px] p-7" style={{ background: "rgba(241,233,210,0.5)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                <h2 className="orda-cinzel text-lg font-semibold text-[#2E2013] mb-4">{t("city.historicalOverview")}</h2>
+                <p className="orda-inter text-[#5C4E38] leading-[1.85] text-base">{city.description}</p>
               </div>
 
               {/* Importance */}
-              <div className="rounded-[20px] p-7" style={{ background: "rgba(212,175,55,0.04)", border: "1px solid rgba(212,175,55,0.1)" }}>
+              <div className="rounded-[20px] p-7" style={{ background: "rgba(184,137,43,0.04)", border: "1px solid rgba(184,137,43,0.1)" }}>
                 <div className="flex items-center gap-3 mb-3">
-                  <Crown size={18} color="#D4AF37" />
-                  <h2 className="orda-cinzel text-base font-semibold text-[#D4AF37]">{t("city.strategicImportance")}</h2>
+                  <Crown size={18} color="#B8892B" />
+                  <h2 className="orda-cinzel text-base font-semibold text-[#B8892B]">{t("city.strategicImportance")}</h2>
                 </div>
-                <p className="orda-cormorant text-xl italic text-[#F6F4EC] leading-relaxed">{city.importance}</p>
+                <p className="orda-cormorant text-xl italic text-[#2E2013] leading-relaxed">{city.importance}</p>
               </div>
 
               {/* Facts */}
-              <div className="rounded-[20px] p-7" style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <h2 className="orda-cinzel text-base font-semibold text-[#F6F4EC] mb-4">{t("city.remarkableFacts")}</h2>
+              <div className="rounded-[20px] p-7" style={{ background: "rgba(241,233,210,0.5)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                <h2 className="orda-cinzel text-base font-semibold text-[#2E2013] mb-4">{t("city.remarkableFacts")}</h2>
                 <div className="space-y-3">
                   {city.facts.map((fact, i) => (
                     <div key={i} className="flex items-start gap-3">
                       <div className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold orda-cinzel mt-0.5"
-                        style={{ background: "rgba(212,175,55,0.12)", color: "#D4AF37", border: "1px solid rgba(212,175,55,0.2)" }}>
+                        style={{ background: "rgba(184,137,43,0.12)", color: "#B8892B", border: "1px solid rgba(184,137,43,0.2)" }}>
                         {i + 1}
                       </div>
-                      <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed">{fact}</p>
+                      <p className="orda-inter text-sm text-[#5C4E38] leading-relaxed">{fact}</p>
                     </div>
                   ))}
                 </div>
@@ -2106,12 +2333,12 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
 
               {/* Trade information */}
               {city.tradeInfo && (
-                <div className="rounded-[20px] p-7" style={{ background: "rgba(87,214,209,0.04)", border: "1px solid rgba(87,214,209,0.12)" }}>
+                <div className="rounded-[20px] p-7" style={{ background: "rgba(107,140,163,0.04)", border: "1px solid rgba(107,140,163,0.12)" }}>
                   <div className="flex items-center gap-3 mb-3">
-                    <ShoppingBag size={18} color="#57D6D1" />
-                    <h2 className="orda-cinzel text-base font-semibold text-[#57D6D1]">{t("city.tradeInformation")}</h2>
+                    <ShoppingBag size={18} color="#6B8CA3" />
+                    <h2 className="orda-cinzel text-base font-semibold text-[#6B8CA3]">{t("city.tradeInformation")}</h2>
                   </div>
-                  <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed">{city.tradeInfo}</p>
+                  <p className="orda-inter text-sm text-[#5C4E38] leading-relaxed">{city.tradeInfo}</p>
                 </div>
               )}
             </div>
@@ -2119,31 +2346,31 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
             {/* Sidebar stats */}
             <div className="space-y-4">
               {[[t("city.founded"), city.founded], [t("city.population"), city.population], [t("city.era"), t("city.eraValue")], [t("city.region"), t("city.regionValue")]].map(([k, v]) => (
-                <div key={k} className="rounded-[16px] p-5" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-1">{k}</div>
-                  <div className="text-[#F6F4EC] text-base orda-cinzel font-semibold">{v}</div>
+                <div key={k} className="rounded-[16px] p-5" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                  <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#5C4E38] mb-1">{k}</div>
+                  <div className="text-[#2E2013] text-base orda-cinzel font-semibold">{v}</div>
                 </div>
               ))}
 
               {/* Related Artifacts */}
-              <div className="rounded-[16px] p-5" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3] mb-3">{t("city.cityArtifacts")}</div>
+              <div className="rounded-[16px] p-5" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#5C4E38] mb-3">{t("city.cityArtifacts")}</div>
                 {(artifactsLoading ? Array.from({ length: 3 }) : artifacts).map((a, index) => (
                   artifactsLoading || !a ? (
-                    <div key={`city-artifact-skeleton-${index}`} className="rounded-[14px] p-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
-                      <div className="h-2 w-24 rounded-full mb-2" style={{ background: "rgba(255,255,255,0.05)" }} />
-                      <div className="h-2 w-16 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
+                    <div key={`city-artifact-skeleton-${index}`} className="rounded-[14px] p-4" style={{ background: "rgba(59,42,19,0.03)", border: "1px solid rgba(59,42,19,0.05)" }}>
+                      <div className="h-2 w-24 rounded-full mb-2" style={{ background: "rgba(59,42,19,0.05)" }} />
+                      <div className="h-2 w-16 rounded-full" style={{ background: "rgba(59,42,19,0.05)" }} />
                     </div>
                   ) : (
-                    <div key={a.id} className="rounded-[14px] p-4 cursor-pointer hover:bg-white/[0.03] transition-colors"
-                      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}
+                    <div key={a.id} className="rounded-[14px] p-4 cursor-pointer hover:bg-[rgba(59,42,19,0.05)] transition-colors"
+                      style={{ background: "rgba(59,42,19,0.03)", border: "1px solid rgba(59,42,19,0.05)" }}
                       onClick={() => setSelectedArtifact(mapApiArtifact(a, city.name, t))}>
-                      <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#D4AF37] mb-1">{a.era}</div>
-                      <div className="text-sm orda-cinzel text-[#F6F4EC]">{a.name}</div>
+                      <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B8892B] mb-1">{a.era}</div>
+                      <div className="text-sm orda-cinzel text-[#2E2013]">{a.name}</div>
                     </div>
                   )
                 ))}
-                <button onClick={() => onNav("artifacts")} className="mt-3 w-full py-2 rounded-xl text-xs orda-cinzel text-[#D4AF37] hover:bg-[#D4AF3710] transition-colors">
+                <button onClick={() => onNav("artifacts")} className="mt-3 w-full py-2 rounded-xl text-xs orda-cinzel text-[#B8892B] hover:bg-[#B8892B10] transition-colors">
                   {t("city.viewAllArtifacts")}
                 </button>
               </div>
@@ -2153,21 +2380,21 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
 
         {activeTab === "timeline" && (
           <div className="max-w-2xl animate-slide-up">
-            <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC] mb-8">{t("city.historicalTimeline")}</h2>
+            <h2 className="orda-cinzel text-xl font-bold text-[#2E2013] mb-8">{t("city.historicalTimeline")}</h2>
             <div className="relative">
-              <div className="absolute left-[72px] top-0 bottom-0 w-px" style={{ background: "linear-gradient(180deg, transparent, rgba(212,175,55,0.3) 10%, rgba(212,175,55,0.3) 90%, transparent)" }} />
+              <div className="absolute left-[72px] top-0 bottom-0 w-px" style={{ background: "linear-gradient(180deg, transparent, rgba(184,137,43,0.3) 10%, rgba(184,137,43,0.3) 90%, transparent)" }} />
               <div className="space-y-6">
                 {timelineEvents.map((e, i) => (
                   <div key={i} className="flex items-start gap-6 animate-slide-right" style={{ animationDelay: `${i * 0.1}s` }}>
                     <div className="w-16 flex-shrink-0 text-right">
-                      <span className="text-xs orda-cinzel text-[#D4AF37] font-semibold">{e.year}</span>
+                      <span className="text-xs orda-cinzel text-[#B8892B] font-semibold">{e.year}</span>
                     </div>
                     <div className="relative">
-                      <div className="w-3 h-3 rounded-full mt-1 border-2 border-[#D4AF37]"
-                        style={{ background: "#0F1115", boxShadow: "0 0 8px rgba(212,175,55,0.4)" }} />
+                      <div className="w-3 h-3 rounded-full mt-1 border-2 border-[#B8892B]"
+                        style={{ background: "#EDE1C4", boxShadow: "0 0 8px rgba(184,137,43,0.4)" }} />
                     </div>
                     <div className="flex-1 pb-2">
-                      <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed">{e.event}</p>
+                      <p className="orda-inter text-sm text-[#5C4E38] leading-relaxed">{e.event}</p>
                     </div>
                   </div>
                 ))}
@@ -2178,32 +2405,32 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
 
         {activeTab === "gallery" && (
           <div className="animate-slide-up">
-            <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC] mb-8">{t("city.gallery")}</h2>
+            <h2 className="orda-cinzel text-xl font-bold text-[#2E2013] mb-8">{t("city.gallery")}</h2>
             {galleryLoading ? (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {Array.from({ length: 4 }, (_, i) => (
-                  <div key={i} className="aspect-[4/3] rounded-[16px]" style={{ background: "rgba(34,38,47,0.5)" }} />
+                  <div key={i} className="aspect-[4/3] rounded-[16px]" style={{ background: "rgba(241,233,210,0.5)" }} />
                 ))}
               </div>
             ) : galleryImages.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {galleryImages.map((image) => (
                   <div key={image.id} className="aspect-[4/3] rounded-[16px] overflow-hidden relative gold-hover cursor-pointer"
-                    style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
+                    style={{ border: "1px solid rgba(59,42,19,0.06)" }}>
                     <img src={image.image_url} alt={image.alt_text || image.title || city.name}
                       className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
                     {image.title && (
                       <div className="absolute inset-x-0 bottom-0 px-3 py-2"
-                        style={{ background: "linear-gradient(0deg, rgba(15,17,21,0.9), transparent)" }}>
-                        <span className="text-xs orda-cinzel text-[#F6F4EC]">{image.title}</span>
+                        style={{ background: "linear-gradient(0deg, rgba(230,216,184,0.9), transparent)" }}>
+                        <span className="text-xs orda-cinzel text-[#2E2013]">{image.title}</span>
                       </div>
                     )}
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="rounded-[20px] p-10 text-center" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <p className="orda-inter text-sm text-[#B7BAC3]">{t("city.noGalleryImages")}</p>
+              <div className="rounded-[20px] p-10 text-center" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                <p className="orda-inter text-sm text-[#5C4E38]">{t("city.noGalleryImages")}</p>
               </div>
             )}
           </div>
@@ -2213,10 +2440,10 @@ function CityPage({ city, onBack, onNav }: { city: City; onBack: () => void; onN
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-slide-up">
             {statsGrid.map(([label, value, sub]) => (
               <div key={label} className="rounded-[20px] p-6 text-center"
-                style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <div className="text-3xl font-bold orda-cinzel text-[#D4AF37] mb-1">{value}</div>
-                <div className="text-sm orda-cinzel text-[#F6F4EC] mb-1">{label}</div>
-                <div className="text-[11px] orda-inter text-[#B7BAC3]">{sub}</div>
+                style={{ background: "rgba(241,233,210,0.5)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                <div className="text-3xl font-bold orda-cinzel text-[#B8892B] mb-1">{value}</div>
+                <div className="text-sm orda-cinzel text-[#2E2013] mb-1">{label}</div>
+                <div className="text-[11px] orda-inter text-[#5C4E38]">{sub}</div>
               </div>
             ))}
           </div>
@@ -2289,25 +2516,25 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
     : (t("aiHistorian.suggestions", { returnObjects: true }) as string[]);
 
   return (
-    <div className="h-screen pt-16 flex flex-col overflow-hidden" style={{ background: "#0F1115" }}>
+    <div className="h-screen pt-16 flex flex-col overflow-hidden" style={{ background: "#EDE1C4" }}>
       <div className="flex-1 min-h-0 max-w-[900px] mx-auto w-full px-4 sm:px-6 flex flex-col">
 
         {/* Header */}
         <div className="flex items-center gap-4 py-4 flex-shrink-0 animate-fade-in">
-          <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/5 transition-colors"
-            style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
-            <ChevronLeft size={16} color="#B7BAC3" />
+          <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-[rgba(59,42,19,0.06)] transition-colors"
+            style={{ border: "1px solid rgba(59,42,19,0.06)" }}>
+            <ChevronLeft size={16} color="#5C4E38" />
           </button>
           <div className="flex items-center gap-4 flex-1">
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center animate-float"
-              style={{ background: "linear-gradient(135deg,rgba(87,214,209,0.15),rgba(87,214,209,0.05))", border: "1px solid rgba(87,214,209,0.25)", boxShadow: "0 0 30px rgba(87,214,209,0.15)" }}>
+              style={{ background: "linear-gradient(135deg,rgba(107,140,163,0.15),rgba(107,140,163,0.05))", border: "1px solid rgba(107,140,163,0.25)", boxShadow: "0 3px 10px rgba(59,42,19,0.15)" }}>
               <span className="text-xl">⚜</span>
             </div>
             <div>
-              <h1 className="orda-cinzel text-lg font-bold text-[#F6F4EC]">{t("aiHistorian.title")}</h1>
+              <h1 className="orda-cinzel text-lg font-bold text-[#2E2013]">{t("aiHistorian.title")}</h1>
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#6FCF97]" style={{ boxShadow: "0 0 6px rgba(111,207,151,0.6)" }} />
-                <span className="text-xs orda-inter text-[#B7BAC3]">{t("aiHistorian.status")}</span>
+                <div className="w-2 h-2 rounded-full bg-[#7C8B5A]" style={{ boxShadow: "0 0 6px rgba(124,139,90,0.6)" }} />
+                <span className="text-xs orda-inter text-[#5C4E38]">{t("aiHistorian.status")}</span>
               </div>
             </div>
           </div>
@@ -2320,7 +2547,7 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
         {activeCity && (
           <button onClick={() => setActiveCityId(null)}
             className="self-start flex-shrink-0 inline-flex items-center gap-2 mb-3 px-3 py-1.5 rounded-full text-xs orda-inter transition-colors hover:opacity-80"
-            style={{ background: "rgba(87,214,209,0.1)", color: "#57D6D1", border: "1px solid rgba(87,214,209,0.25)" }}>
+            style={{ background: "rgba(107,140,163,0.1)", color: "#6B8CA3", border: "1px solid rgba(107,140,163,0.25)" }}>
             <MapPin size={11} />
             {t("aiHistorian.discussingCity", { city: activeCity.name })}
             <X size={11} />
@@ -2332,13 +2559,13 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
           {/* Suggested questions (show initially) */}
           {messages.length === 1 && (
             <div className="animate-slide-up">
-              <p className="text-xs orda-cinzel tracking-widest text-[#B7BAC3] mb-3">{t("aiHistorian.suggestedQuestions")}</p>
+              <p className="text-xs orda-cinzel tracking-widest text-[#5C4E38] mb-3">{t("aiHistorian.suggestedQuestions")}</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {suggestions.map((s) => (
                   <button key={s} onClick={() => { setInput(s); }}
-                    className="text-left p-3 rounded-[14px] text-xs orda-inter text-[#B7BAC3] hover:text-[#F6F4EC] transition-all gold-hover"
-                    style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                    <ChevronRight size={12} className="inline mr-1 text-[#D4AF37]" />
+                    className="text-left p-3 rounded-[14px] text-xs orda-inter text-[#5C4E38] hover:text-[#2E2013] transition-all gold-hover"
+                    style={{ background: "rgba(241,233,210,0.5)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                    <ChevronRight size={12} className="inline mr-1 text-[#B8892B]" />
                     {s}
                   </button>
                 ))}
@@ -2351,21 +2578,21 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
               style={{ animationDelay: "0s" }}>
               {msg.role === "ai" && (
                 <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mr-3 mt-1"
-                  style={{ background: "rgba(87,214,209,0.12)", border: "1px solid rgba(87,214,209,0.2)" }}>
+                  style={{ background: "rgba(107,140,163,0.12)", border: "1px solid rgba(107,140,163,0.2)" }}>
                   <span className="text-sm">⚜</span>
                 </div>
               )}
               <div className={`max-w-[80%] rounded-[18px] px-5 py-4 ${msg.role === "user" ? "rounded-tr-[6px]" : "rounded-tl-[6px]"}`}
                 style={msg.role === "ai"
-                  ? { background: "rgba(34,38,47,0.7)", border: "1px solid rgba(255,255,255,0.07)" }
-                  : { background: "linear-gradient(135deg, rgba(212,175,55,0.15), rgba(212,175,55,0.08))", border: "1px solid rgba(212,175,55,0.2)" }}>
-                <p className="orda-inter text-sm text-[#F6F4EC] leading-[1.75]">{msg.text}</p>
+                  ? { background: "rgba(241,233,210,0.7)", border: "1px solid rgba(59,42,19,0.07)" }
+                  : { background: "linear-gradient(135deg, rgba(184,137,43,0.15), rgba(184,137,43,0.08))", border: "1px solid rgba(184,137,43,0.2)" }}>
+                <p className="orda-inter text-sm text-[#2E2013] leading-[1.75]">{msg.text}</p>
                 {msg.role === "ai" && (
-                  <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
-                    <span className="text-[10px] orda-inter text-[#B7BAC3] flex items-center gap-1">
+                  <div className="mt-3 pt-3 border-t border-[rgba(59,42,19,0.15)] flex items-center justify-between">
+                    <span className="text-[10px] orda-inter text-[#5C4E38] flex items-center gap-1">
                       <BookOpen size={10} /> {t("aiHistorian.basedOnRecords")}
                     </span>
-                    <span className="text-[10px] orda-cinzel text-[#D4AF37]">{t("aiHistorian.aiLabel")}</span>
+                    <span className="text-[10px] orda-cinzel text-[#B8892B]">{t("aiHistorian.aiLabel")}</span>
                   </div>
                 )}
               </div>
@@ -2375,14 +2602,14 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
           {typing && (
             <div className="flex justify-start ai-bubble">
               <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mr-3"
-                style={{ background: "rgba(87,214,209,0.12)", border: "1px solid rgba(87,214,209,0.2)" }}>
+                style={{ background: "rgba(107,140,163,0.12)", border: "1px solid rgba(107,140,163,0.2)" }}>
                 <span className="text-sm">⚜</span>
               </div>
               <div className="rounded-[18px] rounded-tl-[6px] px-5 py-4"
-                style={{ background: "rgba(34,38,47,0.7)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                style={{ background: "rgba(241,233,210,0.7)", border: "1px solid rgba(59,42,19,0.07)" }}>
                 <div className="flex gap-1.5 items-center h-5">
                   {[0, 0.2, 0.4].map((d, i) => (
-                    <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#57D6D1]"
+                    <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#6B8CA3]"
                       style={{ animation: `scroll-bounce 1.2s ease-in-out ${d}s infinite` }} />
                   ))}
                 </div>
@@ -2395,10 +2622,10 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
         {/* Compact input bar — fixed at the bottom of the flex column, never scrolls */}
         <div className="flex-shrink-0 py-4 animate-slide-up" style={{ animationDelay: "0.2s" }}>
           <div className="flex items-center gap-2 pl-5 pr-2 py-2 rounded-[20px]"
-            style={{ background: "rgba(34,38,47,0.6)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            style={{ background: "rgba(241,233,210,0.6)", border: "1px solid rgba(59,42,19,0.08)" }}>
             <textarea
               ref={textareaRef}
-              className="flex-1 bg-transparent outline-none text-sm text-[#F6F4EC] orda-inter placeholder-[#B7BAC3] resize-none leading-relaxed py-[15px] max-h-[140px] overflow-y-auto"
+              className="flex-1 bg-transparent outline-none text-sm text-[#2E2013] orda-inter placeholder-[#5C4E38] resize-none leading-relaxed py-[15px] max-h-[140px] overflow-y-auto"
               placeholder={t("aiHistorian.placeholder")}
               rows={1}
               value={input}
@@ -2409,14 +2636,14 @@ function AIHistorian({ onBack }: { onBack: () => void }) {
               aria-label={t("aiHistorian.sendMessage")}
               className="teal-hover w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all"
               style={{
-                background: input.trim() ? "linear-gradient(135deg,#57D6D1,#3ABAB5)" : "rgba(87,214,209,0.08)",
-                boxShadow: input.trim() ? "0 4px 20px rgba(87,214,209,0.35)" : "none",
+                background: input.trim() ? "linear-gradient(135deg,#6B8CA3,#4F7086)" : "rgba(107,140,163,0.08)",
+                boxShadow: input.trim() ? "0 4px 20px rgba(107,140,163,0.35)" : "none",
                 cursor: input.trim() ? "pointer" : "not-allowed",
               }}>
-              <Send size={16} color={input.trim() ? "#0F1115" : "#4A4D57"} />
+              <Send size={16} color={input.trim() ? "#EDE1C4" : "#9C8F72"} />
             </button>
           </div>
-          <p className="text-center text-[10px] orda-inter text-[#B7BAC3] mt-2">
+          <p className="text-center text-[10px] orda-inter text-[#5C4E38] mt-2">
             {t("aiHistorian.disclaimer")}
           </p>
         </div>
@@ -2473,35 +2700,35 @@ function ArtifactDetailModal({ artifact, onClose }: { artifact: Artifact | null;
   // positioning and center the modal against page content instead of the viewport.
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center sm:p-4"
-      style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(16px)" }}
+      style={{ background: "rgba(46,32,19,0.55)" }}
       onClick={onClose}>
       <div
         className="w-full max-w-lg rounded-t-[24px] sm:rounded-[24px] p-6 sm:p-8 animate-slide-up sm:animate-scale-in max-h-[90vh] overflow-y-auto fixed bottom-0 left-0 right-0 sm:static"
-        style={{ background: "#171A20", border: "1px solid rgba(212,175,55,0.15)", boxShadow: "0 0 80px rgba(212,175,55,0.1)" }}
+        style={{ background: "#F3E9D2", border: "1px solid rgba(184,137,43,0.3)", boxShadow: "0 12px 36px rgba(59,42,19,0.3)" }}
         onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-start mb-6">
           <div>
             <RarityBadge rarity={artifact.rarity} />
-            <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC] mt-2">{artifact.name}</h2>
-            <p className="orda-inter text-sm text-[#B7BAC3]">{artifact.category}</p>
+            <h2 className="orda-cinzel text-xl font-bold text-[#2E2013] mt-2">{artifact.name}</h2>
+            <p className="orda-inter text-sm text-[#5C4E38]">{artifact.category}</p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-white/5 flex-shrink-0">
-            <X size={16} color="#B7BAC3" />
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[rgba(59,42,19,0.06)] flex-shrink-0">
+            <X size={16} color="#5C4E38" />
           </button>
         </div>
 
         <div className="aspect-video rounded-[16px] flex items-center justify-center mb-6"
-          style={{ background: "rgba(15,17,21,0.6)", border: "1px solid rgba(255,255,255,0.04)" }}>
+          style={{ background: "rgba(230,216,184,0.6)", border: "1px solid rgba(59,42,19,0.04)" }}>
           <span className="text-8xl">{artifact.icon}</span>
         </div>
 
-        <p className="orda-inter text-sm text-[#B7BAC3] leading-[1.8] mb-6">{artifact.description}</p>
+        <p className="orda-inter text-sm text-[#5C4E38] leading-[1.8] mb-6">{artifact.description}</p>
 
         <div className="grid grid-cols-2 gap-3">
           {[[t("artifactGallery.found"), artifact.found], [t("artifactGallery.city"), artifact.city]].map(([k, v]) => (
-            <div key={k} className="p-3 rounded-[12px]" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
-              <div className="text-[10px] orda-cinzel tracking-widest text-[#B7BAC3] mb-1">{k}</div>
-              <div className="text-sm orda-cinzel text-[#F6F4EC]">{v}</div>
+            <div key={k} className="p-3 rounded-[12px]" style={{ background: "rgba(59,42,19,0.03)", border: "1px solid rgba(59,42,19,0.05)" }}>
+              <div className="text-[10px] orda-cinzel tracking-widest text-[#5C4E38] mb-1">{k}</div>
+              <div className="text-sm orda-cinzel text-[#2E2013]">{v}</div>
             </div>
           ))}
         </div>
@@ -2542,18 +2769,18 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
   }, [location.state, artifactItems]);
 
   return (
-    <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#0F1115" }}>
+    <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#EDE1C4" }}>
       <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-10">
 
         {/* Header */}
         <div className="flex items-center gap-4 mb-10">
-          <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/5 transition-colors"
-            style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
-            <ChevronLeft size={16} color="#B7BAC3" />
+          <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-[rgba(59,42,19,0.06)] transition-colors"
+            style={{ border: "1px solid rgba(59,42,19,0.06)" }}>
+            <ChevronLeft size={16} color="#5C4E38" />
           </button>
           <div>
-            <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC]">{t("artifactGallery.title")}</h1>
-            <p className="orda-inter text-sm text-[#B7BAC3] mt-1">{t("artifactGallery.subtitle", { count: artifactItems.length })}</p>
+            <h1 className="orda-cinzel text-3xl font-bold text-[#2E2013]">{t("artifactGallery.title")}</h1>
+            <p className="orda-inter text-sm text-[#5C4E38] mt-1">{t("artifactGallery.subtitle", { count: artifactItems.length })}</p>
           </div>
         </div>
 
@@ -2561,7 +2788,7 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
         {activeCity && (
           <button onClick={() => setActiveCityId(null)}
             className="inline-flex items-center gap-2 mb-4 px-3 py-1.5 rounded-full text-xs orda-inter transition-colors hover:opacity-80"
-            style={{ background: "rgba(212,175,55,0.1)", color: "#D4AF37", border: "1px solid rgba(212,175,55,0.25)" }}>
+            style={{ background: "rgba(184,137,43,0.1)", color: "#B8892B", border: "1px solid rgba(184,137,43,0.25)" }}>
             <MapPin size={11} />
             {t("artifactGallery.filteringByCity", { city: activeCity.name })}
             <X size={11} />
@@ -2574,9 +2801,9 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
             <button key={cat} onClick={() => setFilter(cat)}
               className="px-4 py-2 rounded-xl text-xs orda-cinzel tracking-wider transition-all"
               style={{
-                background: filter === cat ? "rgba(212,175,55,0.15)" : "rgba(34,38,47,0.5)",
-                color: filter === cat ? "#D4AF37" : "#B7BAC3",
-                border: `1px solid ${filter === cat ? "rgba(212,175,55,0.3)" : "rgba(255,255,255,0.06)"}`,
+                background: filter === cat ? "rgba(184,137,43,0.15)" : "rgba(241,233,210,0.5)",
+                color: filter === cat ? "#B8892B" : "#5C4E38",
+                border: `1px solid ${filter === cat ? "rgba(184,137,43,0.3)" : "rgba(59,42,19,0.06)"}`,
               }}>
               {cat === "All" ? t("artifactGallery.all") : cat}
             </button>
@@ -2584,42 +2811,42 @@ function ArtifactGallery({ onBack }: { onBack: () => void }) {
         </div>
 
         {/* Grid */}
-        {error && <div className="mb-4 text-sm text-[#B7BAC3]">{t("artifactGallery.unableToLoad")}</div>}
+        {error && <div className="mb-4 text-sm text-[#5C4E38]">{t("artifactGallery.unableToLoad")}</div>}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {isLoading ? Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="rounded-[20px] p-5" style={{ background: "rgba(34,38,47,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <div className="aspect-square rounded-[14px] mb-4" style={{ background: "rgba(15,17,21,0.5)" }} />
-              <div className="h-2 w-20 rounded-full mb-2" style={{ background: "rgba(255,255,255,0.05)" }} />
-              <div className="h-2 w-24 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
+            <div key={i} className="rounded-[20px] p-5" style={{ background: "rgba(241,233,210,0.6)", border: "1px solid rgba(59,42,19,0.06)" }}>
+              <div className="aspect-square rounded-[14px] mb-4" style={{ background: "rgba(230,216,184,0.5)" }} />
+              <div className="h-2 w-20 rounded-full mb-2" style={{ background: "rgba(59,42,19,0.05)" }} />
+              <div className="h-2 w-24 rounded-full" style={{ background: "rgba(59,42,19,0.05)" }} />
             </div>
           )) : filtered.map((artifact, i) => (
             <div key={artifact.id}
               className="rounded-[20px] p-5 cursor-pointer card-hover gold-hover animate-scale-in"
-              style={{ animationDelay: `${i * 0.07}s`, background: "rgba(34,38,47,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}
+              style={{ animationDelay: `${i * 0.07}s`, background: "rgba(241,233,210,0.6)", border: "1px solid rgba(59,42,19,0.06)" }}
               onClick={() => setSelected(artifact)}>
 
               {/* Display area */}
               <div className="aspect-square rounded-[14px] flex items-center justify-center mb-4 relative overflow-hidden"
-                style={{ background: "rgba(15,17,21,0.5)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                style={{ background: "rgba(230,216,184,0.5)", border: "1px solid rgba(59,42,19,0.04)" }}>
                 <div className="absolute inset-0"
-                  style={{ background: `radial-gradient(ellipse at center, ${artifact.rarity === "legendary" ? "rgba(212,175,55,0.1)" : artifact.rarity === "rare" ? "rgba(87,214,209,0.06)" : "rgba(255,255,255,0.03)"} 0%, transparent 70%)` }} />
+                  style={{ background: `radial-gradient(ellipse at center, ${artifact.rarity === "legendary" ? "rgba(184,137,43,0.1)" : artifact.rarity === "rare" ? "rgba(107,140,163,0.06)" : "rgba(59,42,19,0.03)"} 0%, transparent 70%)` }} />
                 <span className="text-5xl relative z-10">{artifact.icon}</span>
               </div>
 
               <RarityBadge rarity={artifact.rarity} />
-              <h3 className="orda-cinzel text-sm font-semibold text-[#F6F4EC] mt-2 mb-1">{artifact.name}</h3>
-              <p className="orda-inter text-[11px] text-[#B7BAC3] leading-relaxed line-clamp-2">{artifact.description}</p>
+              <h3 className="orda-cinzel text-sm font-semibold text-[#2E2013] mt-2 mb-1">{artifact.name}</h3>
+              <p className="orda-inter text-[11px] text-[#5C4E38] leading-relaxed line-clamp-2">{artifact.description}</p>
               <div className="flex items-center gap-2 mt-3">
-                <MapPin size={10} color="#D4AF37" />
-                <span className="text-[10px] orda-inter text-[#B7BAC3]">{artifact.city}</span>
+                <MapPin size={10} color="#B8892B" />
+                <span className="text-[10px] orda-inter text-[#5C4E38]">{artifact.city}</span>
               </div>
             </div>
           ))}
         </div>
         {!isLoading && !error && filtered.length === 0 && (
-          <div className="rounded-[20px] p-10 text-center" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-            <Package size={28} color="#B7BAC3" className="mx-auto mb-3" />
-            <p className="orda-inter text-sm text-[#B7BAC3]">{t("artifactGallery.noResults")}</p>
+          <div className="rounded-[20px] p-10 text-center" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
+            <Package size={28} color="#5C4E38" className="mx-auto mb-3" />
+            <p className="orda-inter text-sm text-[#5C4E38]">{t("artifactGallery.noResults")}</p>
           </div>
         )}
       </div>
@@ -2667,16 +2894,16 @@ function QuestView({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#0F1115" }}>
+    <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#EDE1C4" }}>
       <div className="max-w-3xl mx-auto px-6 py-10">
         <div className="flex items-center gap-4 mb-10">
-          <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/5 transition-colors"
-            style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
-            <ChevronLeft size={16} color="#B7BAC3" />
+          <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-[rgba(59,42,19,0.06)] transition-colors"
+            style={{ border: "1px solid rgba(59,42,19,0.06)" }}>
+            <ChevronLeft size={16} color="#5C4E38" />
           </button>
           <div>
-            <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC]">{t("quests.title")}</h1>
-            <p className="orda-inter text-sm text-[#B7BAC3] mt-1">{t("quests.subtitle")}</p>
+            <h1 className="orda-cinzel text-3xl font-bold text-[#2E2013]">{t("quests.title")}</h1>
+            <p className="orda-inter text-sm text-[#5C4E38] mt-1">{t("quests.subtitle")}</p>
           </div>
         </div>
 
@@ -2684,26 +2911,26 @@ function QuestView({ onBack }: { onBack: () => void }) {
         <div className="grid grid-cols-1 gap-3 mb-8">
           {(isLoading ? Array.from({ length: 4 }) : questItems).map((q, index) => (
             isLoading || !q ? (
-              <div key={`quest-skeleton-${index}`} className="rounded-[16px] p-5" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <div className="h-4 w-32 rounded-full mb-2" style={{ background: "rgba(255,255,255,0.05)" }} />
-                <div className="h-2 w-20 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }} />
+              <div key={`quest-skeleton-${index}`} className="rounded-[16px] p-5" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                <div className="h-4 w-32 rounded-full mb-2" style={{ background: "rgba(59,42,19,0.05)" }} />
+                <div className="h-2 w-20 rounded-full" style={{ background: "rgba(59,42,19,0.05)" }} />
               </div>
             ) : (
               <div key={q.id} onClick={() => { setActiveQuest(q); setCompletedQuestId(null); }}
                 className="rounded-[16px] p-5 cursor-pointer quest-card"
                 style={{
-                  background: activeQuest?.id === q.id ? "rgba(212,175,55,0.08)" : "rgba(34,38,47,0.4)",
-                  border: `1px solid ${activeQuest?.id === q.id ? "rgba(212,175,55,0.25)" : "rgba(255,255,255,0.06)"}`,
+                  background: activeQuest?.id === q.id ? "rgba(184,137,43,0.08)" : "rgba(241,233,210,0.4)",
+                  border: `1px solid ${activeQuest?.id === q.id ? "rgba(184,137,43,0.25)" : "rgba(59,42,19,0.06)"}`,
                 }}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-                      style={{ background: "rgba(212,175,55,0.1)", border: "1px solid rgba(212,175,55,0.2)" }}>
-                      <Zap size={16} color="#D4AF37" />
+                      style={{ background: "rgba(184,137,43,0.1)", border: "1px solid rgba(184,137,43,0.2)" }}>
+                      <Zap size={16} color="#B8892B" />
                     </div>
                     <div>
-                      <div className="text-sm font-semibold orda-cinzel text-[#F6F4EC]">{q.title}</div>
-                      <div className="text-[11px] orda-inter text-[#B7BAC3]">{q.cityName}</div>
+                      <div className="text-sm font-semibold orda-cinzel text-[#2E2013]">{q.title}</div>
+                      <div className="text-[11px] orda-inter text-[#5C4E38]">{q.cityName}</div>
                     </div>
                   </div>
                   <span className="badge-gold">+{q.xp_reward} XP</span>
@@ -2712,42 +2939,50 @@ function QuestView({ onBack }: { onBack: () => void }) {
             )
           ))}
           {!isLoading && !error && questItems.length === 0 && (
-            <div className="rounded-[16px] p-8 text-center" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <Zap size={24} color="#B7BAC3" className="mx-auto mb-3" />
-              <p className="orda-inter text-sm text-[#B7BAC3]">{t("quests.noQuestsAvailable")}</p>
+            <div className="rounded-[16px] p-8 text-center" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
+              <Zap size={24} color="#5C4E38" className="mx-auto mb-3" />
+              <p className="orda-inter text-sm text-[#5C4E38]">{t("quests.noQuestsAvailable")}</p>
             </div>
           )}
         </div>
 
-        {error && <div className="mb-4 text-sm text-[#B7BAC3]">{t("quests.unableToLoad")}</div>}
+        {error && <div className="mb-4 text-sm text-[#5C4E38]">{t("quests.unableToLoad")}</div>}
         {/* Active Quest */}
-        <div className="rounded-[24px] p-8" style={{ background: "rgba(23,26,32,0.8)", border: "1px solid rgba(212,175,55,0.12)" }}>
+        <div className="rounded-[24px] p-8" style={{ background: "rgba(241,233,210,0.8)", border: "1px solid rgba(184,137,43,0.12)" }}>
           <div className="badge-gold mb-4">{t("quests.activeQuest")}</div>
-          <h2 className="orda-cinzel text-2xl font-bold text-[#F6F4EC] mb-2">{activeQuestUi?.title || t("quests.selectQuest")}</h2>
+          <h2 className="orda-cinzel text-2xl font-bold text-[#2E2013] mb-2">{activeQuestUi?.title || t("quests.selectQuest")}</h2>
           <div className="flex items-center gap-2 mb-6">
-            <MapPin size={12} color="#D4AF37" />
-            <span className="text-sm orda-inter text-[#B7BAC3]">{activeQuestUi?.city || ""}</span>
+            <MapPin size={12} color="#B8892B" />
+            <span className="text-sm orda-inter text-[#5C4E38]">{activeQuestUi?.city || ""}</span>
           </div>
-          <p className="orda-cormorant text-xl italic text-[#F6F4EC] leading-relaxed mb-8">{activeQuestUi?.description || t("quests.chooseQuestPrompt")}</p>
+          <p className="orda-cormorant text-xl italic text-[#2E2013] leading-relaxed mb-8">{activeQuestUi?.description || t("quests.chooseQuestPrompt")}</p>
 
           {!activeQuest ? null : justCompleted ? (
             <div className="animate-scale-in rounded-[16px] p-6 text-center"
-              style={{ background: "rgba(111,207,151,0.06)", border: "1px solid rgba(111,207,151,0.2)" }}>
+              style={{ background: "rgba(124,139,90,0.06)", border: "1px solid rgba(124,139,90,0.2)" }}>
               <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4"
-                style={{ background: "rgba(111,207,151,0.15)" }}>
-                <Check size={22} color="#6FCF97" />
+                style={{ background: "rgba(124,139,90,0.15)" }}>
+                <Check size={22} color="#7C8B5A" />
               </div>
-              <div className="text-[#6FCF97] text-sm orda-cinzel tracking-widest mb-2">{t("quests.questComplete")}</div>
+              <div className="text-[#7C8B5A] text-sm orda-cinzel tracking-widest mb-2">{t("quests.questComplete")}</div>
               <div className="flex items-center justify-center gap-4">
                 <span className="badge-green">+{completeQuestMutation.data?.xp_gained ?? activeQuestUi?.xp ?? 0} XP</span>
                 <span className="badge-gold">+{completeQuestMutation.data?.coins_gained ?? 0} {t("passport.coins")}</span>
               </div>
+              {completeQuestMutation.data?.unlocked_city && (
+                <div className="mt-4 pt-4 animate-scale-in" style={{ borderTop: "1px solid rgba(184,137,43,0.15)" }}>
+                  <div className="text-lg mb-1">🔓</div>
+                  <p className="orda-inter text-xs text-[#B8892B]">
+                    {t("quests.cityUnlocked", { city: completeQuestMutation.data.unlocked_city.name })}
+                  </p>
+                </div>
+              )}
             </div>
           ) : isOnCooldown ? (
             <div className="rounded-[16px] p-6 text-center"
-              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <div className="text-[#B7BAC3] text-sm orda-cinzel tracking-widest mb-2">{t("quests.onCooldown")}</div>
-              <p className="orda-inter text-xs text-[#B7BAC3]">
+              style={{ background: "rgba(59,42,19,0.03)", border: "1px solid rgba(59,42,19,0.06)" }}>
+              <div className="text-[#5C4E38] text-sm orda-cinzel tracking-widest mb-2">{t("quests.onCooldown")}</div>
+              <p className="orda-inter text-xs text-[#5C4E38]">
                 {activeQuest.cooldown_until
                   ? t("quests.availableAgain", { date: new Date(activeQuest.cooldown_until).toLocaleString() })
                   : t("quests.checkBackLater")}
@@ -2761,7 +2996,7 @@ function QuestView({ onBack }: { onBack: () => void }) {
                 <Zap size={16} /> {completeQuestMutation.isPending ? t("quests.completing") : t("quests.completeQuest")}
               </button>
               {completeQuestMutation.isError && (
-                <p className="mt-3 text-xs text-center orda-inter" style={{ color: "#E5484D" }}>
+                <p className="mt-3 text-xs text-center orda-inter" style={{ color: "#A23E2E" }}>
                   {(completeQuestMutation.error as Error).message}
                 </p>
               )}
@@ -2798,7 +3033,7 @@ function Certificate({ character, onBack }: { character: CharType; onBack: () =>
   const confettiPieces = Array.from({ length: 40 }, (_, i) => ({
     id: i,
     left: Math.random() * 100,
-    color: ["#D4AF37", "#C9962C", "#57D6D1", "#6FCF97", "#F2C94C"][Math.floor(Math.random() * 5)],
+    color: ["#B8892B", "#8C6239", "#6B8CA3", "#7C8B5A", "#C9A227"][Math.floor(Math.random() * 5)],
     delay: Math.random() * 3,
     duration: Math.random() * 3 + 2,
     size: Math.random() * 8 + 4,
@@ -2806,7 +3041,7 @@ function Certificate({ character, onBack }: { character: CharType; onBack: () =>
 
   return (
     <div className="min-h-screen pt-16 flex flex-col items-center justify-center px-4 py-10 relative overflow-hidden"
-      style={{ background: "#0F1115" }}>
+      style={{ background: "#EDE1C4" }}>
 
       {/* Confetti */}
       {confettiPieces.map(p => (
@@ -2823,62 +3058,62 @@ function Certificate({ character, onBack }: { character: CharType; onBack: () =>
 
       <div className="animate-scale-in text-center mb-8">
         <div className="badge-gold mb-4 inline-block">{t("certificate.journeyComplete")}</div>
-        <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC] mb-2">{t("certificate.title")}</h1>
-        <p className="orda-inter text-sm text-[#B7BAC3]">{t("certificate.subtitle")}</p>
+        <h1 className="orda-cinzel text-3xl font-bold text-[#2E2013] mb-2">{t("certificate.title")}</h1>
+        <p className="orda-inter text-sm text-[#5C4E38]">{t("certificate.subtitle")}</p>
       </div>
 
       {certificatesQuery.isLoading && (
-        <p className="text-sm text-[#B7BAC3] orda-inter mb-4">{t("certificate.loading")}</p>
+        <p className="text-sm text-[#5C4E38] orda-inter mb-4">{t("certificate.loading")}</p>
       )}
       {certificatesQuery.error && (
-        <p className="text-sm text-[#B7BAC3] orda-inter mb-4">{t("certificate.unableToLoad")}</p>
+        <p className="text-sm text-[#5C4E38] orda-inter mb-4">{t("certificate.unableToLoad")}</p>
       )}
 
       {/* Certificate */}
       <div className="certificate-frame rounded-[24px] max-w-2xl w-full animate-scale-in"
-        style={{ background: "linear-gradient(135deg, #171A20 0%, #1A1C14 50%, #171A20 100%)", animationDelay: "0.2s" }}>
+        style={{ background: "linear-gradient(135deg, #E2D3AC 0%, #DCCBA0 50%, #E2D3AC 100%)", animationDelay: "0.2s" }}>
 
         {/* Inner border */}
         <div className="m-4 rounded-[18px] p-10 relative"
-          style={{ border: "1px solid rgba(212,175,55,0.15)" }}>
+          style={{ border: "1px solid rgba(184,137,43,0.15)" }}>
 
           {/* Corner ornaments */}
           {["top-4 left-4", "top-4 right-4", "bottom-4 left-4", "bottom-4 right-4"].map((pos, i) => (
-            <div key={i} className={`absolute ${pos} text-[#D4AF37] text-xl opacity-40`}>✦</div>
+            <div key={i} className={`absolute ${pos} text-[#B8892B] text-xl opacity-40`}>✦</div>
           ))}
 
           {/* Header */}
           <div className="text-center mb-8">
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center"
-              style={{ background: "linear-gradient(135deg,rgba(212,175,55,0.15),rgba(212,175,55,0.05))", border: "1px solid rgba(212,175,55,0.25)" }}>
+              style={{ background: "linear-gradient(135deg,rgba(184,137,43,0.15),rgba(184,137,43,0.05))", border: "1px solid rgba(184,137,43,0.25)" }}>
               <span className="text-2xl">⚜</span>
             </div>
-            <div className="text-[#D4AF37] text-[10px] tracking-[0.4em] orda-cinzel mb-1">{t("certificate.academyName")}</div>
-            <div className="w-32 h-px mx-auto" style={{ background: "linear-gradient(90deg,transparent,rgba(212,175,55,0.4),transparent)" }} />
+            <div className="text-[#B8892B] text-[10px] tracking-[0.4em] orda-cinzel mb-1">{t("certificate.academyName")}</div>
+            <div className="w-32 h-px mx-auto" style={{ background: "linear-gradient(90deg,transparent,rgba(184,137,43,0.4),transparent)" }} />
           </div>
 
           {/* Certificate body */}
           <div className="text-center space-y-4">
-            <p className="orda-cormorant text-lg italic text-[#B7BAC3]">{t("certificate.thisCertifies")}</p>
-            <div className="py-4 border-b border-t" style={{ borderColor: "rgba(212,175,55,0.12)" }}>
-              <h2 className="orda-cinzel text-4xl font-bold text-[#D4AF37]">{certificate?.title || t("certificate.defaultTitle")}</h2>
+            <p className="orda-cormorant text-lg italic text-[#5C4E38]">{t("certificate.thisCertifies")}</p>
+            <div className="py-4 border-b border-t" style={{ borderColor: "rgba(184,137,43,0.12)" }}>
+              <h2 className="orda-cinzel text-4xl font-bold text-[#B8892B]">{certificate?.title || t("certificate.defaultTitle")}</h2>
             </div>
-            <p className="orda-cormorant text-lg italic text-[#B7BAC3]">{t("certificate.hasCompleted")}</p>
+            <p className="orda-cormorant text-lg italic text-[#5C4E38]">{t("certificate.hasCompleted")}</p>
             <div className="flex items-center justify-center gap-3">
               <char.icon size={20} color={char.color} />
-              <span className="orda-cinzel text-xl text-[#F6F4EC]">{t("certificate.characterOf", { name: char.name })}</span>
+              <span className="orda-cinzel text-xl text-[#2E2013]">{t("certificate.characterOf", { name: char.name })}</span>
             </div>
-            <p className="orda-cormorant text-base italic text-[#B7BAC3] max-w-sm mx-auto leading-relaxed">
+            <p className="orda-cormorant text-base italic text-[#5C4E38] max-w-sm mx-auto leading-relaxed">
               {t("certificate.traversed")}
             </p>
           </div>
 
           {/* Stats row */}
-          <div className="grid grid-cols-3 gap-4 mt-8 pt-8 border-t" style={{ borderColor: "rgba(212,175,55,0.08)" }}>
+          <div className="grid grid-cols-3 gap-4 mt-8 pt-8 border-t" style={{ borderColor: "rgba(184,137,43,0.08)" }}>
             {[[`${citiesVisited}/${citiesTotal}`, t("certificate.cities")], [`${artifactsCollected}`, t("certificate.artifacts")], [`${questsCompleted}/${totalQuests}`, t("certificate.quests")]].map(([v, l]) => (
               <div key={l} className="text-center">
-                <div className="text-xl font-bold orda-cinzel text-[#D4AF37]">{v}</div>
-                <div className="text-xs orda-inter text-[#B7BAC3]">{l}</div>
+                <div className="text-xl font-bold orda-cinzel text-[#B8892B]">{v}</div>
+                <div className="text-xs orda-inter text-[#5C4E38]">{l}</div>
               </div>
             ))}
           </div>
@@ -2886,12 +3121,12 @@ function Certificate({ character, onBack }: { character: CharType; onBack: () =>
           {/* Footer */}
           <div className="mt-8 flex items-center justify-between">
             <div>
-              <div className="text-[10px] orda-cinzel tracking-widest text-[#B7BAC3]">{t("certificate.issuedBy")}</div>
-              <div className="text-sm orda-cinzel text-[#D4AF37]">{t("certificate.academyName")}</div>
+              <div className="text-[10px] orda-cinzel tracking-widest text-[#5C4E38]">{t("certificate.issuedBy")}</div>
+              <div className="text-sm orda-cinzel text-[#B8892B]">{t("certificate.academyName")}</div>
             </div>
             <div className="text-right">
-              <div className="text-[10px] orda-cinzel tracking-widest text-[#B7BAC3]">{t("certificate.date")}</div>
-              <div className="text-sm orda-cinzel text-[#D4AF37]">
+              <div className="text-[10px] orda-cinzel tracking-widest text-[#5C4E38]">{t("certificate.date")}</div>
+              <div className="text-sm orda-cinzel text-[#B8892B]">
                 {certificate ? new Date(certificate.issued_at).toLocaleDateString() : t("certificate.notYetIssued")}
               </div>
             </div>
@@ -2915,7 +3150,7 @@ function Certificate({ character, onBack }: { character: CharType; onBack: () =>
           </button>
         </div>
         {issueCertificateMutation.isError && (
-          <p className="text-xs orda-inter" style={{ color: "#E5484D" }}>
+          <p className="text-xs orda-inter" style={{ color: "#A23E2E" }}>
             {(issueCertificateMutation.error as Error).message}
           </p>
         )}
@@ -3000,16 +3235,16 @@ function Passport({ onBack, onLogout }: { onBack: () => void; onLogout: () => vo
   };
 
   return (
-    <div className="min-h-screen pt-16 pb-16 animate-fade-in" style={{ background: "#0F1115" }}>
+    <div className="min-h-screen pt-16 pb-16 animate-fade-in" style={{ background: "#EDE1C4" }}>
       <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-10">
         <div className="flex items-center gap-4 mb-10">
-          <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/5 transition-colors"
-            style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
-            <ChevronLeft size={16} color="#B7BAC3" />
+          <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-[rgba(59,42,19,0.06)] transition-colors"
+            style={{ border: "1px solid rgba(59,42,19,0.06)" }}>
+            <ChevronLeft size={16} color="#5C4E38" />
           </button>
           <div>
             <div className="badge-gold mb-2 inline-block">{t("passport.officialDocument")}</div>
-            <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC]">{t("passport.title")}</h1>
+            <h1 className="orda-cinzel text-3xl font-bold text-[#2E2013]">{t("passport.title")}</h1>
           </div>
         </div>
 
@@ -3017,10 +3252,10 @@ function Passport({ onBack, onLogout }: { onBack: () => void; onLogout: () => vo
           {/* Left column — identity */}
           <div className="space-y-6">
             <div className="certificate-frame rounded-[24px] p-7 text-center"
-              style={{ background: "linear-gradient(135deg, #171A20 0%, #1A1C14 50%, #171A20 100%)" }}>
+              style={{ background: "linear-gradient(135deg, #E2D3AC 0%, #DCCBA0 50%, #E2D3AC 100%)" }}>
               <div className="relative w-24 h-24 mx-auto mb-4">
                 <div className="w-24 h-24 rounded-full overflow-hidden flex items-center justify-center text-3xl font-bold orda-cinzel"
-                  style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)", color: "#0F1115" }}>
+                  style={{ background: "linear-gradient(135deg,#B8892B,#8C6239)", color: "#EDE1C4" }}>
                   {user?.avatar_url ? (
                     <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
                   ) : (
@@ -3029,20 +3264,20 @@ function Passport({ onBack, onLogout }: { onBack: () => void; onLogout: () => vo
                 </div>
                 <button onClick={() => avatarInputRef.current?.click()} disabled={uploadAvatarMutation.isPending}
                   className="absolute bottom-0 right-0 w-8 h-8 rounded-full flex items-center justify-center"
-                  style={{ background: "#22262F", border: "2px solid #0F1115" }}>
-                  <Camera size={13} color="#D4AF37" />
+                  style={{ background: "#F3E9D2", border: "2px solid #EDE1C4" }}>
+                  <Camera size={13} color="#B8892B" />
                 </button>
                 <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
               </div>
-              <h2 className="orda-cinzel text-xl font-bold text-[#F6F4EC]">{user?.username || "…"}</h2>
+              <h2 className="orda-cinzel text-xl font-bold text-[#2E2013]">{user?.username || "…"}</h2>
               <div className="badge-gold mt-2 inline-block">{stats?.title || t("passport.defaultTitle")}</div>
-              <div className="mt-4 pt-4 border-t space-y-2" style={{ borderColor: "rgba(212,175,55,0.1)" }}>
+              <div className="mt-4 pt-4 border-t space-y-2" style={{ borderColor: "rgba(184,137,43,0.1)" }}>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-[#B7BAC3] orda-inter">{t("passport.registered")}</span>
-                  <span className="text-[#F6F4EC] orda-inter">{user ? new Date(user.created_at).toLocaleDateString() : "—"}</span>
+                  <span className="text-[#5C4E38] orda-inter">{t("passport.registered")}</span>
+                  <span className="text-[#2E2013] orda-inter">{user ? new Date(user.created_at).toLocaleDateString() : "—"}</span>
                 </div>
                 {uploadAvatarMutation.isError && (
-                  <p className="text-[11px] orda-inter" style={{ color: "#E5484D" }}>
+                  <p className="text-[11px] orda-inter" style={{ color: "#A23E2E" }}>
                     {(uploadAvatarMutation.error as Error).message}
                   </p>
                 )}
@@ -3050,10 +3285,10 @@ function Passport({ onBack, onLogout }: { onBack: () => void; onLogout: () => vo
             </div>
 
             {/* Language */}
-            <div className="rounded-[16px] p-5" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <div className="rounded-[16px] p-5" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
               <div className="flex items-center gap-2 mb-3">
-                <Globe size={14} color="#D4AF37" />
-                <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">{t("passport.language")}</span>
+                <Globe size={14} color="#B8892B" />
+                <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#5C4E38]">{t("passport.language")}</span>
               </div>
               <select
                 value={user?.language || DEFAULT_LANGUAGE}
@@ -3061,16 +3296,16 @@ function Passport({ onBack, onLogout }: { onBack: () => void; onLogout: () => vo
                 className="input-field"
                 style={{ appearance: "auto" }}>
                 {SUPPORTED_LANGUAGES.map((code) => (
-                  <option key={code} value={code} style={{ background: "#171A20" }}>{t(`language.${code}`)}</option>
+                  <option key={code} value={code} style={{ background: "#E2D3AC" }}>{t(`language.${code}`)}</option>
                 ))}
               </select>
             </div>
 
             {/* Settings */}
-            <div className="rounded-[16px] p-5" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <div className="rounded-[16px] p-5" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
               <div className="flex items-center gap-2 mb-4">
-                <Settings size={14} color="#D4AF37" />
-                <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#B7BAC3]">{t("passport.settings")}</span>
+                <Settings size={14} color="#B8892B" />
+                <span className="text-[10px] orda-cinzel tracking-[0.2em] text-[#5C4E38]">{t("passport.settings")}</span>
               </div>
               <form onSubmit={saveSettings} className="space-y-3">
                 <input className="input-field" type="text" placeholder={t("passport.fullNamePlaceholder")} value={fullName}
@@ -3078,7 +3313,7 @@ function Passport({ onBack, onLogout }: { onBack: () => void; onLogout: () => vo
                 <textarea className="input-field resize-none" rows={3} placeholder={t("passport.bioPlaceholder")} value={bio}
                   onChange={(e) => setBio(e.target.value)} />
                 {updateProfileMutation.isError && (
-                  <p className="text-[11px] orda-inter" style={{ color: "#E5484D" }}>
+                  <p className="text-[11px] orda-inter" style={{ color: "#A23E2E" }}>
                     {(updateProfileMutation.error as Error).message}
                   </p>
                 )}
@@ -3108,9 +3343,9 @@ function Passport({ onBack, onLogout }: { onBack: () => void; onLogout: () => vo
                 [t("passport.coins"), stats?.coins ?? "—"],
                 [t("passport.dailyStreak"), stats?.streak_days ?? "—"],
               ].map(([label, value]) => (
-                <div key={label} className="rounded-[16px] p-4 text-center" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div className="text-xl font-bold orda-cinzel text-[#D4AF37]">{value}</div>
-                  <div className="text-[10px] orda-inter text-[#B7BAC3] mt-1">{label}</div>
+                <div key={label} className="rounded-[16px] p-4 text-center" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                  <div className="text-xl font-bold orda-cinzel text-[#B8892B]">{value}</div>
+                  <div className="text-[10px] orda-inter text-[#5C4E38] mt-1">{label}</div>
                 </div>
               ))}
             </div>
@@ -3121,98 +3356,98 @@ function Passport({ onBack, onLogout }: { onBack: () => void; onLogout: () => vo
                 [t("passport.completedQuests"), `${questsCompleted}/${questsList.length}`, Zap],
                 [t("passport.collectedArtifacts"), `${artifactsCollected}/${artifactsList.length}`, Package],
               ].map(([label, value, Icon]) => (
-                <div key={label as string} className="rounded-[16px] p-4 text-center" style={{ background: "rgba(212,175,55,0.04)", border: "1px solid rgba(212,175,55,0.1)" }}>
-                  {typeof Icon !== "string" && <Icon size={16} color="#D4AF37" className="mx-auto mb-2" />}
-                  <div className="text-lg font-bold orda-cinzel text-[#F6F4EC]">{value as string}</div>
-                  <div className="text-[10px] orda-inter text-[#B7BAC3] mt-1">{label as string}</div>
+                <div key={label as string} className="rounded-[16px] p-4 text-center" style={{ background: "rgba(184,137,43,0.04)", border: "1px solid rgba(184,137,43,0.1)" }}>
+                  {typeof Icon !== "string" && <Icon size={16} color="#B8892B" className="mx-auto mb-2" />}
+                  <div className="text-lg font-bold orda-cinzel text-[#2E2013]">{value as string}</div>
+                  <div className="text-[10px] orda-inter text-[#5C4E38] mt-1">{label as string}</div>
                 </div>
               ))}
             </div>
 
             {/* Achievements */}
-            <div className="rounded-[20px] p-6" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <div className="rounded-[20px] p-6" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
               <div className="flex items-center gap-2 mb-4">
-                <Award size={16} color="#D4AF37" />
-                <h2 className="orda-cinzel text-sm font-semibold text-[#F6F4EC] tracking-wider">{t("passport.achievements")}</h2>
+                <Award size={16} color="#B8892B" />
+                <h2 className="orda-cinzel text-sm font-semibold text-[#2E2013] tracking-wider">{t("passport.achievements")}</h2>
               </div>
               {achievementsQuery.isLoading ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {Array.from({ length: 2 }).map((_, i) => (
-                    <div key={i} className="h-14 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }} />
+                    <div key={i} className="h-14 rounded-xl" style={{ background: "rgba(59,42,19,0.03)" }} />
                   ))}
                 </div>
               ) : achievements.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {achievements.map((achievement) => (
                     <div key={achievement.id} className="flex items-center gap-3 p-3 rounded-xl"
-                      style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.1)" }}>
+                      style={{ background: "rgba(184,137,43,0.05)", border: "1px solid rgba(184,137,43,0.1)" }}>
                       <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                        style={{ background: "rgba(212,175,55,0.15)" }}>
-                        <Check size={15} color="#D4AF37" />
+                        style={{ background: "rgba(184,137,43,0.15)" }}>
+                        <Check size={15} color="#B8892B" />
                       </div>
                       <div>
-                        <div className="text-xs orda-cinzel text-[#F6F4EC]">{achievement.title}</div>
-                        <div className="text-[10px] orda-inter text-[#B7BAC3]">{achievement.description}</div>
+                        <div className="text-xs orda-cinzel text-[#2E2013]">{achievement.title}</div>
+                        <div className="text-[10px] orda-inter text-[#5C4E38]">{achievement.description}</div>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-xs orda-inter text-[#B7BAC3]">{t("passport.noAchievements")}</p>
+                <p className="text-xs orda-inter text-[#5C4E38]">{t("passport.noAchievements")}</p>
               )}
             </div>
 
             {/* Certificates */}
-            <div className="rounded-[20px] p-6" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <div className="rounded-[20px] p-6" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
               <div className="flex items-center gap-2 mb-4">
-                <BookOpen size={16} color="#D4AF37" />
-                <h2 className="orda-cinzel text-sm font-semibold text-[#F6F4EC] tracking-wider">{t("passport.certificates")}</h2>
+                <BookOpen size={16} color="#B8892B" />
+                <h2 className="orda-cinzel text-sm font-semibold text-[#2E2013] tracking-wider">{t("passport.certificates")}</h2>
               </div>
               {certificatesQuery.isLoading ? (
-                <div className="h-14 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }} />
+                <div className="h-14 rounded-xl" style={{ background: "rgba(59,42,19,0.03)" }} />
               ) : certificates.length > 0 ? (
                 <div className="space-y-2">
                   {certificates.map((certificate) => (
                     <div key={certificate.id} className="flex items-center justify-between p-3 rounded-xl"
-                      style={{ background: "rgba(212,175,55,0.05)", border: "1px solid rgba(212,175,55,0.1)" }}>
+                      style={{ background: "rgba(184,137,43,0.05)", border: "1px solid rgba(184,137,43,0.1)" }}>
                       <div>
-                        <div className="text-xs orda-cinzel text-[#F6F4EC]">{certificate.title}</div>
-                        <div className="text-[10px] orda-inter text-[#B7BAC3]">{new Date(certificate.issued_at).toLocaleDateString()}</div>
+                        <div className="text-xs orda-cinzel text-[#2E2013]">{certificate.title}</div>
+                        <div className="text-[10px] orda-inter text-[#5C4E38]">{new Date(certificate.issued_at).toLocaleDateString()}</div>
                       </div>
                       <span className="badge-gold">{certificate.completion_percent}%</span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-xs orda-inter text-[#B7BAC3]">{t("passport.noCertificates")}</p>
+                <p className="text-xs orda-inter text-[#5C4E38]">{t("passport.noCertificates")}</p>
               )}
             </div>
 
             {/* Journey Timeline */}
-            <div className="rounded-[20px] p-6" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <div className="rounded-[20px] p-6" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
               <div className="flex items-center gap-2 mb-4">
-                <Clock size={16} color="#D4AF37" />
-                <h2 className="orda-cinzel text-sm font-semibold text-[#F6F4EC] tracking-wider">{t("passport.journeyTimeline")}</h2>
+                <Clock size={16} color="#B8892B" />
+                <h2 className="orda-cinzel text-sm font-semibold text-[#2E2013] tracking-wider">{t("passport.journeyTimeline")}</h2>
               </div>
               {summaryQuery.isLoading ? (
-                <div className="h-14 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }} />
+                <div className="h-14 rounded-xl" style={{ background: "rgba(59,42,19,0.03)" }} />
               ) : timeline.length > 0 ? (
                 <div className="relative">
-                  <div className="absolute left-[5px] top-1 bottom-1 w-px" style={{ background: "rgba(212,175,55,0.2)" }} />
+                  <div className="absolute left-[5px] top-1 bottom-1 w-px" style={{ background: "rgba(184,137,43,0.2)" }} />
                   <div className="space-y-4">
                     {timeline.map((record) => (
                       <div key={record.id} className="flex items-start gap-4 pl-0">
-                        <div className="w-[11px] h-[11px] rounded-full mt-1 flex-shrink-0" style={{ background: "#D4AF37" }} />
+                        <div className="w-[11px] h-[11px] rounded-full mt-1 flex-shrink-0" style={{ background: "#B8892B" }} />
                         <div>
-                          <p className="text-xs orda-inter text-[#F6F4EC]">{describeProgressRecord(t, record, cities, artifactsList, questsList)}</p>
-                          <p className="text-[10px] orda-inter text-[#B7BAC3]">{new Date(record.completed_at as string).toLocaleString()}</p>
+                          <p className="text-xs orda-inter text-[#2E2013]">{describeProgressRecord(t, record, cities, artifactsList, questsList)}</p>
+                          <p className="text-[10px] orda-inter text-[#5C4E38]">{new Date(record.completed_at as string).toLocaleString()}</p>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
               ) : (
-                <p className="text-xs orda-inter text-[#B7BAC3]">{t("passport.noTimeline")}</p>
+                <p className="text-xs orda-inter text-[#5C4E38]">{t("passport.noTimeline")}</p>
               )}
             </div>
           </div>
@@ -3285,39 +3520,39 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
 
   return (
     <div className="min-h-screen pt-16 flex items-center justify-center px-4 animate-fade-in"
-      style={{ background: "radial-gradient(ellipse at top, rgba(212,175,55,0.04) 0%, #0F1115 60%)" }}>
+      style={{ background: "radial-gradient(ellipse at top, rgba(184,137,43,0.04) 0%, #EDE1C4 60%)" }}>
       <div className="max-w-md w-full glass-dark rounded-[24px] p-8 animate-scale-in">
         {success ? (
           <div className="animate-scale-in text-center py-6">
             <div className="w-14 h-14 mx-auto mb-4 rounded-full flex items-center justify-center"
-              style={{ background: "rgba(111,207,151,0.15)" }}>
-              <Check size={26} color="#6FCF97" />
+              style={{ background: "rgba(124,139,90,0.15)" }}>
+              <Check size={26} color="#7C8B5A" />
             </div>
-            <div className="text-[#6FCF97] text-sm orda-cinzel tracking-widest mb-2">
+            <div className="text-[#7C8B5A] text-sm orda-cinzel tracking-widest mb-2">
               {mode === "login" ? t("auth.welcomeBackShort") : t("auth.accountCreated")}
             </div>
-            <p className="orda-inter text-sm text-[#B7BAC3]">{t("auth.enteringSteppe")}</p>
+            <p className="orda-inter text-sm text-[#5C4E38]">{t("auth.enteringSteppe")}</p>
           </div>
         ) : (
           <>
             <div className="text-center mb-8">
               <div className="w-14 h-14 mx-auto mb-4 rounded-2xl flex items-center justify-center"
-                style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)" }}>
-                <span className="text-[#0F1115] font-bold text-xl orda-cinzel">O</span>
+                style={{ background: "linear-gradient(135deg,#B8892B,#8C6239)" }}>
+                <span className="text-[#EDE1C4] font-bold text-xl orda-cinzel">O</span>
               </div>
-              <h1 className="orda-cinzel text-2xl font-bold text-[#F6F4EC] mb-2">
+              <h1 className="orda-cinzel text-2xl font-bold text-[#2E2013] mb-2">
                 {mode === "login" ? t("auth.welcomeBack") : t("auth.joinJourney")}
               </h1>
-              <p className="orda-inter text-sm text-[#B7BAC3]">
+              <p className="orda-inter text-sm text-[#5C4E38]">
                 {mode === "login" ? t("auth.signInSubtitle") : t("auth.registerSubtitle")}
               </p>
             </div>
 
-            <div className="flex gap-2 mb-6 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }}>
+            <div className="flex gap-2 mb-6 p-1 rounded-xl" style={{ background: "rgba(59,42,19,0.03)" }}>
               {(["login", "register"] as const).map((m) => (
                 <button key={m} type="button" onClick={() => { setMode(m); setErrors({}); }}
                   className="flex-1 py-2 rounded-lg text-xs orda-cinzel tracking-widest transition-all"
-                  style={{ background: mode === m ? "rgba(212,175,55,0.15)" : "transparent", color: mode === m ? "#D4AF37" : "#B7BAC3" }}>
+                  style={{ background: mode === m ? "rgba(184,137,43,0.15)" : "transparent", color: mode === m ? "#B8892B" : "#5C4E38" }}>
                   {m === "login" ? t("auth.signIn") : t("auth.register")}
                 </button>
               ))}
@@ -3327,14 +3562,14 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
               <div>
                 <input className="input-field" type="email" placeholder={t("auth.email")} value={email}
                   onChange={(e) => setEmail(e.target.value)} />
-                {errors.email && <p className="mt-1.5 text-xs orda-inter" style={{ color: "#E5484D" }}>{errors.email}</p>}
+                {errors.email && <p className="mt-1.5 text-xs orda-inter" style={{ color: "#A23E2E" }}>{errors.email}</p>}
               </div>
               {mode === "register" && (
                 <>
                   <div>
                     <input className="input-field" type="text" placeholder={t("auth.username")} value={username}
                       onChange={(e) => setUsername(e.target.value)} />
-                    {errors.username && <p className="mt-1.5 text-xs orda-inter" style={{ color: "#E5484D" }}>{errors.username}</p>}
+                    {errors.username && <p className="mt-1.5 text-xs orda-inter" style={{ color: "#A23E2E" }}>{errors.username}</p>}
                   </div>
                   <input className="input-field" type="text" placeholder={t("auth.fullNameOptional")} value={fullName}
                     onChange={(e) => setFullName(e.target.value)} />
@@ -3343,19 +3578,19 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: () => void }) {
               <div>
                 <input className="input-field" type="password" placeholder={t("auth.password")} value={password}
                   onChange={(e) => setPassword(e.target.value)} />
-                {errors.password && <p className="mt-1.5 text-xs orda-inter" style={{ color: "#E5484D" }}>{errors.password}</p>}
+                {errors.password && <p className="mt-1.5 text-xs orda-inter" style={{ color: "#A23E2E" }}>{errors.password}</p>}
               </div>
 
               {mode === "login" && (
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 rounded" style={{ accentColor: "#D4AF37" }} />
-                  <span className="text-xs orda-inter text-[#B7BAC3]">{t("auth.rememberMe")}</span>
+                    className="w-4 h-4 rounded" style={{ accentColor: "#B8892B" }} />
+                  <span className="text-xs orda-inter text-[#5C4E38]">{t("auth.rememberMe")}</span>
                 </label>
               )}
 
               {activeMutation.error && (
-                <p className="text-xs text-center orda-inter" style={{ color: "#E5484D" }}>
+                <p className="text-xs text-center orda-inter" style={{ color: "#A23E2E" }}>
                   {(activeMutation.error as Error).message}
                 </p>
               )}
@@ -3388,20 +3623,20 @@ function NotificationsPage({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#0F1115" }}>
+    <div className="min-h-screen pt-16 animate-fade-in" style={{ background: "#EDE1C4" }}>
       <div className="max-w-2xl mx-auto px-6 py-10">
         <div className="flex items-center gap-4 mb-10">
-          <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-white/5 transition-colors"
-            style={{ border: "1px solid rgba(255,255,255,0.06)" }}>
-            <ChevronLeft size={16} color="#B7BAC3" />
+          <button onClick={onBack} className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-[rgba(59,42,19,0.06)] transition-colors"
+            style={{ border: "1px solid rgba(59,42,19,0.06)" }}>
+            <ChevronLeft size={16} color="#5C4E38" />
           </button>
           <div className="flex-1">
-            <h1 className="orda-cinzel text-3xl font-bold text-[#F6F4EC]">{t("notificationsPage.title")}</h1>
-            <p className="orda-inter text-sm text-[#B7BAC3] mt-1">{t("notificationsPage.subtitle")}</p>
+            <h1 className="orda-cinzel text-3xl font-bold text-[#2E2013]">{t("notificationsPage.title")}</h1>
+            <p className="orda-inter text-sm text-[#5C4E38] mt-1">{t("notificationsPage.subtitle")}</p>
           </div>
           {unreadCount > 0 && (
             <button onClick={() => markAllReadMutation.mutate()}
-              className="flex items-center gap-1.5 text-xs orda-inter text-[#D4AF37] hover:text-[#F6F4EC] transition-colors flex-shrink-0">
+              className="flex items-center gap-1.5 text-xs orda-inter text-[#B8892B] hover:text-[#2E2013] transition-colors flex-shrink-0">
               <Check size={13} /> {t("notificationCenter.markAllRead")}
             </button>
           )}
@@ -3410,13 +3645,13 @@ function NotificationsPage({ onBack }: { onBack: () => void }) {
         {notificationsQuery.isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-16 rounded-[16px]" style={{ background: "rgba(34,38,47,0.4)" }} />
+              <div key={i} className="h-16 rounded-[16px]" style={{ background: "rgba(241,233,210,0.4)" }} />
             ))}
           </div>
         ) : notifications.length === 0 ? (
-          <div className="rounded-[20px] p-10 text-center" style={{ background: "rgba(34,38,47,0.4)", border: "1px solid rgba(255,255,255,0.06)" }}>
-            <Bell size={24} color="#B7BAC3" className="mx-auto mb-3" />
-            <p className="orda-inter text-sm text-[#B7BAC3]">{t("notificationCenter.empty")}</p>
+          <div className="rounded-[20px] p-10 text-center" style={{ background: "rgba(241,233,210,0.4)", border: "1px solid rgba(59,42,19,0.06)" }}>
+            <Bell size={24} color="#5C4E38" className="mx-auto mb-3" />
+            <p className="orda-inter text-sm text-[#5C4E38]">{t("notificationCenter.empty")}</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -3424,28 +3659,28 @@ function NotificationsPage({ onBack }: { onBack: () => void }) {
               const Icon = TYPE_ICON[notification.type] ?? Bell;
               return (
                 <div key={notification.id}
-                  className="group relative flex items-start gap-3 p-4 rounded-[16px] cursor-pointer transition-colors hover:bg-white/[0.03]"
-                  style={{ background: "rgba(34,38,47,0.4)", border: `1px solid ${notification.is_read ? "rgba(255,255,255,0.06)" : "rgba(212,175,55,0.2)"}` }}
+                  className="group relative flex items-start gap-3 p-4 rounded-[16px] cursor-pointer transition-colors hover:bg-[rgba(59,42,19,0.05)]"
+                  style={{ background: "rgba(241,233,210,0.4)", border: `1px solid ${notification.is_read ? "rgba(59,42,19,0.06)" : "rgba(184,137,43,0.2)"}` }}
                   onClick={() => handleSelect(notification)}>
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: notification.is_read ? "rgba(255,255,255,0.04)" : "rgba(212,175,55,0.12)", border: `1px solid ${notification.is_read ? "rgba(255,255,255,0.06)" : "rgba(212,175,55,0.25)"}` }}>
-                    <Icon size={16} color={notification.is_read ? "#B7BAC3" : "#D4AF37"} />
+                    style={{ background: notification.is_read ? "rgba(59,42,19,0.04)" : "rgba(184,137,43,0.12)", border: `1px solid ${notification.is_read ? "rgba(59,42,19,0.06)" : "rgba(184,137,43,0.25)"}` }}>
+                    <Icon size={16} color={notification.is_read ? "#5C4E38" : "#B8892B"} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="orda-cinzel text-sm text-[#F6F4EC] truncate">{notification.title}</span>
-                      {!notification.is_read && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#57D6D1" }} />}
+                      <span className="orda-cinzel text-sm text-[#2E2013] truncate">{notification.title}</span>
+                      {!notification.is_read && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: "#6B8CA3" }} />}
                     </div>
-                    <p className="orda-inter text-xs text-[#B7BAC3] leading-relaxed mt-0.5">{notification.message}</p>
-                    <span className="orda-inter text-[10px] text-[#6B6E77] mt-1 block">
+                    <p className="orda-inter text-xs text-[#5C4E38] leading-relaxed mt-0.5">{notification.message}</p>
+                    <span className="orda-inter text-[10px] text-[#9C8F72] mt-1 block">
                       {formatRelativeTime(notification.created_at, i18n.resolvedLanguage || "en")}
                     </span>
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(notification.id); }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/5 flex-shrink-0"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[rgba(59,42,19,0.06)] flex-shrink-0"
                     aria-label={t("notificationCenter.delete")}>
-                    <X size={13} color="#B7BAC3" />
+                    <X size={13} color="#5C4E38" />
                   </button>
                 </div>
               );
@@ -3462,20 +3697,20 @@ function LegalPage({ page, onNav }: { page: "privacy" | "terms"; onNav: (v: View
   const { t } = useTranslation();
   const sections = t(`${page}.sections`, { returnObjects: true }) as { heading: string; body: string }[];
   return (
-    <div className="min-h-screen pt-16 pb-20 animate-fade-in" style={{ background: "#0F1115" }}>
+    <div className="min-h-screen pt-16 pb-20 animate-fade-in" style={{ background: "#EDE1C4" }}>
       <div className="max-w-3xl mx-auto px-6 py-10">
         <button onClick={() => onNav("landing")}
-          className="nav-link flex items-center gap-2 text-sm text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors mb-8 orda-inter">
+          className="nav-link flex items-center gap-2 text-sm text-[#5C4E38] hover:text-[#2E2013] transition-colors mb-8 orda-inter">
           <ChevronLeft size={16} /> {t("common.backToHome")}
         </button>
         <div className="badge-gold mb-4 inline-block">{t(`${page}.badge`)}</div>
-        <h1 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#F6F4EC] mb-4">{t(`${page}.title`)}</h1>
-        <p className="orda-inter text-sm text-[#B7BAC3] mb-10">{t(`${page}.updated`)}</p>
+        <h1 className="orda-cinzel text-3xl md:text-4xl font-bold text-[#2E2013] mb-4">{t(`${page}.title`)}</h1>
+        <p className="orda-inter text-sm text-[#5C4E38] mb-10">{t(`${page}.updated`)}</p>
         <div className="space-y-6">
           {sections.map((section, i) => (
-            <div key={i} className="rounded-[20px] p-7" style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <h2 className="orda-cinzel text-base font-semibold text-[#F6F4EC] mb-3">{section.heading}</h2>
-              <p className="orda-inter text-sm text-[#B7BAC3] leading-relaxed">{section.body}</p>
+            <div key={i} className="rounded-[20px] p-7" style={{ background: "rgba(241,233,210,0.5)", border: "1px solid rgba(59,42,19,0.06)" }}>
+              <h2 className="orda-cinzel text-base font-semibold text-[#2E2013] mb-3">{section.heading}</h2>
+              <p className="orda-inter text-sm text-[#5C4E38] leading-relaxed">{section.body}</p>
             </div>
           ))}
         </div>
@@ -3489,24 +3724,329 @@ function ContactsPage({ onNav }: { onNav: (v: View) => void }) {
   const email = t("contacts.email");
   return (
     <div className="min-h-screen pt-16 pb-20 flex items-center justify-center px-4 animate-fade-in"
-      style={{ background: "radial-gradient(ellipse at top, rgba(212,175,55,0.04) 0%, #0F1115 60%)" }}>
+      style={{ background: "radial-gradient(ellipse at top, rgba(184,137,43,0.04) 0%, #EDE1C4 60%)" }}>
       <div className="max-w-md w-full">
         <button onClick={() => onNav("landing")}
-          className="nav-link flex items-center gap-2 text-sm text-[#B7BAC3] hover:text-[#F6F4EC] transition-colors mb-8 orda-inter">
+          className="nav-link flex items-center gap-2 text-sm text-[#5C4E38] hover:text-[#2E2013] transition-colors mb-8 orda-inter">
           <ChevronLeft size={16} /> {t("common.backToHome")}
         </button>
         <div className="glass-dark rounded-[24px] p-8 text-center animate-scale-in">
           <div className="w-14 h-14 mx-auto mb-4 rounded-2xl flex items-center justify-center"
-            style={{ background: "linear-gradient(135deg,#D4AF37,#C9962C)" }}>
-            <MessageSquare size={22} color="#0F1115" />
+            style={{ background: "linear-gradient(135deg,#B8892B,#8C6239)" }}>
+            <MessageSquare size={22} color="#EDE1C4" />
           </div>
-          <h1 className="orda-cinzel text-2xl font-bold text-[#F6F4EC] mb-2">{t("contacts.title")}</h1>
-          <p className="orda-inter text-sm text-[#B7BAC3] mb-6 leading-relaxed">{t("contacts.intro")}</p>
+          <h1 className="orda-cinzel text-2xl font-bold text-[#2E2013] mb-2">{t("contacts.title")}</h1>
+          <p className="orda-inter text-sm text-[#5C4E38] mb-6 leading-relaxed">{t("contacts.intro")}</p>
           <a href={`mailto:${email}`} className="nav-link btn-primary inline-flex items-center justify-center gap-2 text-sm px-6 py-3 mb-4">
             {email}
           </a>
-          <p className="orda-inter text-xs text-[#B7BAC3]">{t("contacts.responseTime")}</p>
+          <p className="orda-inter text-xs text-[#5C4E38]">{t("contacts.responseTime")}</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ORDAS (SOCIAL GROUPS) ──────────────────────────────────────────────────────
+function GroupsPage({ onBack, onSelectGroup }: { onBack: () => void; onSelectGroup: (id: string) => void }) {
+  const { t } = useTranslation();
+  const { myGroupsQuery, createGroupMutation, joinGroupMutation } = useGroups();
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+
+  const handleCreate = (e: FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    createGroupMutation.mutate({ name: name.trim() }, {
+      onSuccess: (group) => onSelectGroup(group.id),
+    });
+  };
+
+  const handleJoin = (e: FormEvent) => {
+    e.preventDefault();
+    if (!code.trim()) return;
+    joinGroupMutation.mutate({ invite_code: code.trim() }, {
+      onSuccess: (group) => onSelectGroup(group.id),
+    });
+  };
+
+  const groups = myGroupsQuery.data || [];
+
+  return (
+    <div className="min-h-screen pt-16 pb-20 px-4 sm:px-8 animate-fade-in" style={{ background: "#EDE1C4" }}>
+      <div className="max-w-3xl mx-auto">
+        <button onClick={onBack} className="nav-link flex items-center gap-2 text-sm text-[#5C4E38] hover:text-[#2E2013] transition-colors mb-6 orda-inter">
+          <ChevronLeft size={16} /> {t("common.backToHome")}
+        </button>
+
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg,#B8892B,#8C6239)" }}>
+            <Users size={18} color="#EDE1C4" />
+          </div>
+          <h1 className="orda-cinzel text-2xl font-bold text-[#2E2013]">{t("groups.title")}</h1>
+        </div>
+        <p className="orda-inter text-sm text-[#5C4E38] mb-8">{t("groups.subtitle")}</p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+          <form onSubmit={handleCreate} className="rounded-[16px] p-5" style={{ background: "rgba(241,233,210,0.6)", border: "1px solid rgba(59,42,19,0.14)" }}>
+            <h2 className="orda-cinzel text-sm font-semibold text-[#2E2013] mb-3 flex items-center gap-2">
+              <Plus size={15} color="#B8892B" /> {t("groups.createTitle")}
+            </h2>
+            <input value={name} onChange={(e) => setName(e.target.value)}
+              placeholder={t("groups.createPlaceholder")} maxLength={100}
+              className="input-field text-sm mb-3" />
+            {createGroupMutation.isError && (
+              <p className="text-xs mb-2" style={{ color: "#A23E2E" }}>{(createGroupMutation.error as Error).message}</p>
+            )}
+            <button type="submit" disabled={!name.trim() || createGroupMutation.isPending}
+              className="btn-primary w-full text-sm py-2.5 disabled:opacity-50">
+              {createGroupMutation.isPending ? t("groups.creating") : t("groups.createButton")}
+            </button>
+          </form>
+
+          <form onSubmit={handleJoin} className="rounded-[16px] p-5" style={{ background: "rgba(241,233,210,0.6)", border: "1px solid rgba(59,42,19,0.14)" }}>
+            <h2 className="orda-cinzel text-sm font-semibold text-[#2E2013] mb-3 flex items-center gap-2">
+              <Users size={15} color="#B8892B" /> {t("groups.joinTitle")}
+            </h2>
+            <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder={t("groups.joinPlaceholder")} maxLength={16}
+              className="input-field text-sm mb-3 orda-cinzel tracking-widest" />
+            {joinGroupMutation.isError && (
+              <p className="text-xs mb-2" style={{ color: "#A23E2E" }}>{(joinGroupMutation.error as Error).message}</p>
+            )}
+            <button type="submit" disabled={!code.trim() || joinGroupMutation.isPending}
+              className="btn-ghost w-full text-sm py-2.5 disabled:opacity-50">
+              {joinGroupMutation.isPending ? t("groups.joining") : t("groups.joinButton")}
+            </button>
+          </form>
+        </div>
+
+        <h2 className="orda-cinzel text-xs tracking-[0.2em] text-[#5C4E38] mb-3">{t("groups.myOrdas")}</h2>
+        {myGroupsQuery.isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="h-16 rounded-[14px]" style={{ background: "rgba(59,42,19,0.04)" }} />
+            ))}
+          </div>
+        ) : groups.length > 0 ? (
+          <div className="space-y-2">
+            {groups.map((group) => (
+              <button key={group.id} onClick={() => onSelectGroup(group.id)}
+                className="card-hover w-full flex items-center justify-between gap-3 p-4 rounded-[14px] text-left transition-colors"
+                style={{ background: "rgba(184,137,43,0.05)", border: "1px solid rgba(184,137,43,0.12)" }}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "rgba(184,137,43,0.15)" }}>
+                    <Users size={15} color="#B8892B" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="orda-cinzel text-sm font-semibold text-[#2E2013] truncate">{group.name}</div>
+                    <div className="orda-inter text-xs text-[#5C4E38]">{t("groups.memberCount", { count: group.member_count })}</div>
+                  </div>
+                </div>
+                <ChevronRight size={16} color="#B8892B" className="flex-shrink-0" />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-[14px] p-6 text-center" style={{ background: "rgba(59,42,19,0.02)", border: "1px solid rgba(59,42,19,0.05)" }}>
+            <p className="text-sm orda-inter text-[#5C4E38]">{t("groups.noGroups")}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GroupDetailPage({ groupId, onBack }: { groupId: string | null; onBack: () => void }) {
+  const { t } = useTranslation();
+  const { groupQuery, membersQuery, leaderboardQuery } = useGroup(groupId ?? undefined);
+  const [copied, setCopied] = useState(false);
+
+  const group = groupQuery.data;
+  const members = membersQuery.data || [];
+  const leaderboard = leaderboardQuery.data || [];
+  const inviteLink = group && typeof window !== "undefined" ? `${window.location.origin}/join?code=${group.invite_code}` : "";
+
+  const copyLink = () => {
+    if (!inviteLink) return;
+    navigator.clipboard.writeText(inviteLink).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  if (groupQuery.isError) {
+    return (
+      <div className="min-h-screen pt-16 flex flex-col items-center justify-center gap-4 px-4" style={{ background: "#EDE1C4" }}>
+        <p className="orda-inter text-sm text-[#5C4E38]">{t("groups.notFound")}</p>
+        <button onClick={onBack} className="btn-ghost text-sm px-6 py-2.5">{t("groups.backToOrdas")}</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen pt-16 pb-20 px-4 sm:px-8 animate-fade-in" style={{ background: "#EDE1C4" }}>
+      <div className="max-w-3xl mx-auto">
+        <button onClick={onBack} className="nav-link flex items-center gap-2 text-sm text-[#5C4E38] hover:text-[#2E2013] transition-colors mb-6 orda-inter">
+          <ChevronLeft size={16} /> {t("groups.backToOrdas")}
+        </button>
+
+        {groupQuery.isLoading || !group ? (
+          <div className="h-24 rounded-[16px] animate-pulse" style={{ background: "rgba(59,42,19,0.04)" }} />
+        ) : (
+          <>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg,#B8892B,#8C6239)" }}>
+                <Users size={20} color="#EDE1C4" />
+              </div>
+              <div>
+                <h1 className="orda-cinzel text-xl font-bold text-[#2E2013]">{group.name}</h1>
+                <p className="orda-inter text-xs text-[#5C4E38]">{t("groups.memberCount", { count: group.member_count })}</p>
+              </div>
+            </div>
+
+            <div className="rounded-[16px] p-5 mb-6" style={{ background: "rgba(184,137,43,0.05)", border: "1px solid rgba(184,137,43,0.15)" }}>
+              <div className="text-[10px] orda-cinzel tracking-[0.2em] text-[#5C4E38] mb-2">{t("groups.inviteLink")}</div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0 orda-inter text-xs sm:text-sm text-[#2E2013] px-3 py-2.5 rounded-lg truncate" style={{ background: "rgba(241,233,210,0.7)", border: "1px solid rgba(59,42,19,0.1)" }}>
+                  {inviteLink}
+                </div>
+                <button onClick={copyLink} className="btn-teal text-xs px-4 py-2.5 flex items-center gap-1.5 flex-shrink-0">
+                  <Copy size={13} /> {copied ? t("groups.copied") : t("groups.copyLink")}
+                </button>
+              </div>
+              <div className="mt-2 orda-inter text-[11px] text-[#5C4E38]">{t("groups.inviteCode")}: <span className="orda-cinzel text-[#B8892B] tracking-widest">{group.invite_code}</span></div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h2 className="orda-cinzel text-xs tracking-[0.2em] text-[#5C4E38] mb-3 flex items-center gap-2">
+                  <Users size={13} color="#B8892B" /> {t("groups.members")}
+                </h2>
+                {membersQuery.isLoading ? (
+                  <div className="h-32 rounded-[14px] animate-pulse" style={{ background: "rgba(59,42,19,0.04)" }} />
+                ) : (
+                  <div className="space-y-2">
+                    {members.map((member) => (
+                      <div key={member.user_id} className="flex items-center gap-3 p-3 rounded-[12px]" style={{ background: "rgba(241,233,210,0.5)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden orda-cinzel text-xs font-bold" style={{ background: "rgba(184,137,43,0.15)", color: "#B8892B" }}>
+                          {member.avatar_url ? <img src={member.avatar_url} alt="" className="w-full h-full object-cover" /> : member.username[0]?.toUpperCase()}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="orda-cinzel text-xs font-semibold text-[#2E2013] truncate">{member.username}</span>
+                            {member.is_owner && <Crown size={11} color="#B8892B" />}
+                          </div>
+                          <div className="orda-inter text-[10px] text-[#5C4E38]">{t("groups.levelXp", { level: member.level, xp: member.xp })}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h2 className="orda-cinzel text-xs tracking-[0.2em] text-[#5C4E38] mb-3 flex items-center gap-2">
+                  <Trophy size={13} color="#B8892B" /> {t("groups.leaderboard")}
+                </h2>
+                {leaderboardQuery.isLoading ? (
+                  <div className="h-32 rounded-[14px] animate-pulse" style={{ background: "rgba(59,42,19,0.04)" }} />
+                ) : (
+                  <div className="space-y-2">
+                    {leaderboard.map((entry) => {
+                      // Top 3 read as medals (gold/silver/bronze) — everyone else is a
+                      // plain numbered row. Same three tones used for artifact rarity
+                      // elsewhere in the app, kept consistent here.
+                      const medal = entry.rank === 1 ? "#B8892B" : entry.rank === 2 ? "#9AA0A6" : entry.rank === 3 ? "#8C6239" : null;
+                      return (
+                        <div key={entry.user_id} className="flex items-center gap-3 p-3 rounded-[12px]"
+                          style={medal
+                            ? { background: `${medal}18`, border: `1px solid ${medal}45` }
+                            : { background: "rgba(241,233,210,0.5)", border: "1px solid rgba(59,42,19,0.06)" }}>
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 orda-cinzel text-xs font-bold"
+                            style={medal ? { background: medal, color: "#F3E9D2" } : { color: "#5C4E38" }}>
+                            {medal ? <Crown size={13} color="#F3E9D2" /> : `#${entry.rank}`}
+                          </div>
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden orda-cinzel text-xs font-bold" style={{ background: "rgba(184,137,43,0.15)", color: "#B8892B" }}>
+                            {entry.avatar_url ? <img src={entry.avatar_url} alt="" className="w-full h-full object-cover" /> : entry.username[0]?.toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="orda-cinzel text-xs font-semibold text-[#2E2013] truncate">{entry.username}</div>
+                            <div className="flex items-center flex-wrap gap-x-2.5 gap-y-0.5 mt-0.5">
+                              <span className="orda-inter text-[10px] text-[#5C4E38]">{t("groups.levelShort", { level: entry.level })}</span>
+                              <span className="orda-inter text-[10px] text-[#B8892B] font-semibold">{entry.xp} XP</span>
+                              <span className="orda-inter text-[10px] text-[#5C4E38] flex items-center gap-0.5"><Coins size={10} color="#B8892B" />{entry.coins}</span>
+                              <span className="orda-inter text-[10px] text-[#5C4E38] flex items-center gap-0.5"><ScrollText size={10} color="#8C6239" />{entry.completed_quests}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function JoinPage({ onDone, onSignIn }: { onDone: (groupId: string) => void; onSignIn: () => void }) {
+  const { t } = useTranslation();
+  const location = useLocation();
+  const { isAuthenticated } = useAuthSession();
+  const { joinGroupMutation } = useGroups();
+  const codeFromUrl = new URLSearchParams(location.search).get("code") || "";
+  const [code, setCode] = useState(codeFromUrl);
+  const attemptedRef = useRef(false);
+
+  useEffect(() => {
+    if (isAuthenticated && codeFromUrl && !attemptedRef.current) {
+      attemptedRef.current = true;
+      joinGroupMutation.mutate({ invite_code: codeFromUrl }, {
+        onSuccess: (group) => onDone(group.id),
+      });
+    }
+  }, [isAuthenticated, codeFromUrl]);
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!code.trim()) return;
+    joinGroupMutation.mutate({ invite_code: code.trim() }, {
+      onSuccess: (group) => onDone(group.id),
+    });
+  };
+
+  return (
+    <div className="min-h-screen pt-16 flex items-center justify-center px-4 animate-fade-in" style={{ background: "#EDE1C4" }}>
+      <div className="max-w-sm w-full rounded-[20px] p-8 text-center" style={{ background: "rgba(241,233,210,0.6)", border: "1px solid rgba(59,42,19,0.14)" }}>
+        <div className="w-14 h-14 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ background: "linear-gradient(135deg,#B8892B,#8C6239)" }}>
+          <Users size={22} color="#EDE1C4" />
+        </div>
+        <h1 className="orda-cinzel text-xl font-bold text-[#2E2013] mb-2">{t("groups.joinPageTitle")}</h1>
+
+        {!isAuthenticated ? (
+          <>
+            <p className="orda-inter text-sm text-[#5C4E38] mb-6">{t("groups.joinPageSigninPrompt")}</p>
+            <button onClick={onSignIn} className="btn-primary w-full text-sm py-3">{t("groups.joinPageSigninButton")}</button>
+          </>
+        ) : joinGroupMutation.isPending ? (
+          <p className="orda-inter text-sm text-[#5C4E38]">{t("groups.joining")}</p>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder={t("groups.joinPlaceholder")} maxLength={16}
+              className="input-field text-sm mb-3 orda-cinzel tracking-widest text-center" />
+            {joinGroupMutation.isError && (
+              <p className="text-xs mb-3" style={{ color: "#A23E2E" }}>{(joinGroupMutation.error as Error).message}</p>
+            )}
+            <button type="submit" disabled={!code.trim()} className="btn-primary w-full text-sm py-3 disabled:opacity-50">
+              {t("groups.joinButton")}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -3523,6 +4063,7 @@ export default function App() {
 
   const view = viewForPathname(location.pathname);
   const cityId = view === "city" ? cityIdFromPathname(location.pathname) : null;
+  const groupId = view === "group" ? groupIdFromPathname(location.pathname) : null;
   // The city list endpoint only returns summary fields; the detail page needs the
   // full record (description, significance, historical_facts, trade_info, ...), so
   // it's fetched separately by id rather than derived from the summary list.
@@ -3589,8 +4130,13 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const handleGroupSelect = (id: string) => {
+    rrNavigate(pathForView("group", id));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   return (
-    <div className="min-h-screen orda-inter" style={{ background: "#0F1115", color: "#F6F4EC" }}>
+    <div className="min-h-screen orda-inter" style={{ background: "#EDE1C4", color: "#2E2013" }}>
       <style>{GLOBAL_CSS}</style>
 
       <NavBar view={view} onNav={navigate} />
@@ -3603,7 +4149,7 @@ export default function App() {
           </>
         )}
         {view === "chars" && (
-          <div className="min-h-screen pt-16" style={{ background: "radial-gradient(ellipse at top, rgba(212,175,55,0.04) 0%, #0F1115 60%)" }}>
+          <div className="min-h-screen pt-16" style={{ background: "radial-gradient(ellipse at top, rgba(184,137,43,0.04) 0%, #EDE1C4 60%)" }}>
             <CharacterSelect onSelect={handleCharSelect} />
           </div>
         )}
@@ -3620,8 +4166,8 @@ export default function App() {
           selectedCity ? (
             <CityPage city={selectedCity} onBack={() => navigate("dashboard")} onNav={navigate} />
           ) : (
-            <div className="min-h-screen pt-16 flex items-center justify-center" style={{ background: "#0F1115" }}>
-              <div className="animate-pulse-gold w-10 h-10 rounded-full" style={{ background: "rgba(212,175,55,0.15)" }} />
+            <div className="min-h-screen pt-16 flex items-center justify-center" style={{ background: "#EDE1C4" }}>
+              <div className="animate-pulse-gold w-10 h-10 rounded-full" style={{ background: "rgba(184,137,43,0.15)" }} />
             </div>
           )
         )}
@@ -3646,6 +4192,15 @@ export default function App() {
         {view === "privacy" && <LegalPage page="privacy" onNav={navigate} />}
         {view === "terms" && <LegalPage page="terms" onNav={navigate} />}
         {view === "contacts" && <ContactsPage onNav={navigate} />}
+        {view === "groups" && (
+          <GroupsPage onBack={() => navigate("dashboard")} onSelectGroup={handleGroupSelect} />
+        )}
+        {view === "group" && (
+          <GroupDetailPage groupId={groupId} onBack={() => navigate("groups")} />
+        )}
+        {view === "join" && (
+          <JoinPage onDone={handleGroupSelect} onSignIn={() => navigate("auth")} />
+        )}
       </div>
     </div>
   );

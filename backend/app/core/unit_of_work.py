@@ -13,6 +13,8 @@ from app.repositories.city import CityRepository
 from app.repositories.embedding import EmbeddingRepository
 from app.repositories.gallery_image import GalleryImageRepository
 from app.repositories.gamification_setting import GamificationSettingRepository
+from app.repositories.group import GroupRepository
+from app.repositories.group_membership import GroupMembershipRepository
 from app.repositories.historical_document import HistoricalDocumentRepository
 from app.repositories.historical_figure import HistoricalFigureRepository
 from app.repositories.homepage_content import HomepageContentRepository
@@ -46,6 +48,8 @@ class UnitOfWork:
         self.gallery_images = GalleryImageRepository(session)
         self.homepage_content = HomepageContentRepository(session)
         self.gamification_settings = GamificationSettingRepository(session)
+        self.groups = GroupRepository(session)
+        self.group_memberships = GroupMembershipRepository(session)
         self.system_settings = SystemSettingRepository(session)
         self.user_cosmetics = UserCosmeticRepository(session)
         self.suggested_prompts = SuggestedPromptRepository(session)

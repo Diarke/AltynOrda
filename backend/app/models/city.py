@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Float, String, Text
+from sqlalchemy import JSON, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -20,6 +20,9 @@ class City(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "cities"
 
     slug: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    # Position in the linear historical-journey sequence — lower opens first.
+    # Admin-editable; defaults to 0 (unordered) until explicitly set.
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

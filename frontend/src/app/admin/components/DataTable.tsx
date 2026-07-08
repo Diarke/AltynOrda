@@ -38,7 +38,7 @@ export function DataTable<T>({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <div className="admin-card rounded-2xl overflow-hidden" style={{ background: "rgba(34,38,47,0.5)", border: "1px solid rgba(255,255,255,0.06)" }}>
+    <div className="admin-card rounded-2xl overflow-hidden" style={{ background: "rgba(241,233,210,0.5)", border: "1px solid rgba(59,42,19,0.06)" }}>
       <Table>
         <TableHeader>
           <TableRow>
@@ -77,7 +77,7 @@ export function DataTable<T>({
           )}
         </TableBody>
       </Table>
-      <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+      <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: "rgba(59,42,19,0.06)" }}>
         <span className="text-xs text-muted-foreground">
           {total === 0 ? "0 results" : `Page ${page} of ${totalPages} · ${total} total`}
         </span>

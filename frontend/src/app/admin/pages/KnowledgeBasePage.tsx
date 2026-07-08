@@ -89,7 +89,7 @@ function UploadTab() {
       <div className="space-y-4">
         <div
           className="rounded-2xl border-2 border-dashed p-8 text-center cursor-pointer transition-colors"
-          style={{ borderColor: file ? "rgba(212,175,55,0.4)" : "rgba(255,255,255,0.12)" }}
+          style={{ borderColor: file ? "rgba(184,137,43,0.4)" : "rgba(59,42,19,0.12)" }}
           onClick={() => inputRef.current?.click()}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
@@ -180,7 +180,7 @@ function UploadTab() {
         <Label className="text-muted-foreground">Recently indexed</Label>
         <div className="space-y-2">
           {(recentDocs?.data ?? []).map((doc) => (
-            <div key={doc.id} className="rounded-lg p-3 text-xs" style={{ background: "rgba(255,255,255,0.03)" }}>
+            <div key={doc.id} className="rounded-lg p-3 text-xs" style={{ background: "rgba(59,42,19,0.03)" }}>
               <div className="font-medium truncate">{doc.title}</div>
               <div className="flex items-center gap-2 mt-1 text-muted-foreground">
                 <Badge variant="outline" className="text-[10px]">{doc.language}</Badge>

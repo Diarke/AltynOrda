@@ -21,6 +21,7 @@
     "map": "Карта",
     "artifacts": "Артефактілер",
     "aiHistorian": "AI тарихшы",
+    "ordas": "Орда",
     "about": "Жоба туралы",
     "enter": "Кіру",
     "passport": "Төлқұжат",
@@ -233,7 +234,8 @@
       "completed": "Аяқталды",
       "inProgress": "Орындалуда",
       "notStarted": "Басталмаған"
-    }
+    },
+    "lockedTooltip": "Бұл бағытты ашу үшін алдыңғы қалаларды аяқтаңыз."
   },
   "dashboard": {
     "journey": "САЯХАТ",
@@ -253,12 +255,52 @@
     "level": "{{level}}-деңгей",
     "xpEarned": "{{xp}} XP жиналды",
     "notifications": "ХАБАРЛАНДЫРУЛАР",
-    "mobileQuestsPanel": "Тапсырмалар мен артефактілер",
-    "mobileProgressPanel": "Барыс пен хабарландырулар",
+    "mobileQuestsPanel": "Паспорт",
+    "mobileProgressPanel": "AI Oracle",
     "noNotifications": "Әзірге хабарландырулар жоқ.",
     "activeCity": "БЕЛСЕНДІ ҚАЛА",
     "noActiveCity": "Бастау үшін картадан қаланы таңдаңыз.",
-    "viewCityDetails": "Толығырақ →"
+    "viewCityDetails": "Толығырақ →",
+    "examProgress": "ЕМТИХАН БАРЫСЫ",
+    "currentMission": "АҒЫМДАҒЫ МИССИЯ",
+    "openExamination": "Қала емтиханын ашу",
+    "journeyLog": "САЯХАТ ЖУРНАЛЫ",
+    "openFullOracle": "Толық әңгімені ашу →",
+    "tabs": {
+      "world": "Әлем",
+      "cities": "Қалалар",
+      "currentCity": "Ағымдағы қала",
+      "artifacts": "Артефактілер",
+      "timeline": "Хроника"
+    }
+  },
+  "groups": {
+    "title": "Ордалар",
+    "subtitle": "Сыныптастарыңызбен немесе достарыңызбен Орда құрыңыз және ортақ рейтингте жарысыңыз.",
+    "createTitle": "Орда құру",
+    "createPlaceholder": "Орда атауы",
+    "createButton": "Құру",
+    "creating": "Құрылуда…",
+    "joinTitle": "Код бойынша қосылу",
+    "joinPlaceholder": "ШАҚЫРУ КОДЫ",
+    "joinButton": "Қосылу",
+    "joining": "Қосылуда…",
+    "myOrdas": "МЕНІҢ ОРДАЛАРЫМ",
+    "noGroups": "Сіз әлі ешбір Ордаға қосылған жоқсыз — жаңасын құрыңыз немесе код бойынша қосылыңыз.",
+    "memberCount": "{{count}} мүше",
+    "inviteLink": "ШАҚЫРУ СІЛТЕМЕСІ",
+    "inviteCode": "Шақыру коды",
+    "copyLink": "Көшіру",
+    "copied": "Көшірілді!",
+    "members": "МҮШЕЛЕР",
+    "leaderboard": "РЕЙТИНГ",
+    "levelXp": "{{level}}-деңгей · {{xp}} XP",
+    "levelShort": "{{level}}-дең.",
+    "notFound": "Бұл Орда табылмады.",
+    "backToOrdas": "Ордаларға оралу",
+    "joinPageTitle": "Ордаға қосылу",
+    "joinPageSigninPrompt": "Алдымен жүйеге кіріңіз, содан кейін шақыру сілтемесін қайта ашыңыз.",
+    "joinPageSigninButton": "Кіру"
   },
   "city": {
     "backToMap": "Картаға оралу",
@@ -357,7 +399,8 @@
     "checkBackLater": "Кейінірек қайта тексеріңіз.",
     "completeQuest": "Тапсырманы орындау",
     "completing": "Орындалуда…",
-    "noQuestsAvailable": "Қазір қолжетімді тапсырмалар жоқ — кейінірек қараңыз."
+    "noQuestsAvailable": "Қазір қолжетімді тапсырмалар жоқ — кейінірек қараңыз.",
+    "cityUnlocked": "Сіз жаңа қаланы аштыңыз: {{city}}!"
   },
   "certificate": {
     "loading": "Сертификатыңыз жүктелуде…",

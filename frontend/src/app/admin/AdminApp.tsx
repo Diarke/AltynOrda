@@ -21,17 +21,17 @@ function AccessDenied({ reason }: { reason: "guest" | "forbidden" }) {
   return (
     <div
       className="min-h-screen flex items-center justify-center text-center px-6"
-      style={{ background: "#0F1115", color: "#F6F4EC" }}
+      style={{ background: "#EDE1C4", color: "#2E2013" }}
     >
       <style>{GLOBAL_CSS}</style>
       <div className="max-w-sm">
-        <div className="text-3xl mb-4" style={{ color: "#D4AF37" }}>
+        <div className="text-3xl mb-4" style={{ color: "#B8892B" }}>
           ⬦
         </div>
         <h1 className="orda-cinzel text-xl font-bold mb-3">
           {reason === "guest" ? "Sign in required" : "Access denied"}
         </h1>
-        <p className="orda-inter text-sm mb-6" style={{ color: "#B7BAC3" }}>
+        <p className="orda-inter text-sm mb-6" style={{ color: "#5C4E38" }}>
           {reason === "guest"
             ? "You need to sign in with an administrator account to view this page."
             : "Your account does not have administrator access."}
@@ -49,8 +49,8 @@ function AdminRouteGuard({ children }: { children: React.ReactNode }) {
 
   if (profileQuery.isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "#0F1115" }}>
-        <div className="animate-pulse-gold w-10 h-10 rounded-full" style={{ background: "rgba(212,175,55,0.15)" }} />
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#EDE1C4" }}>
+        <div className="animate-pulse-gold w-10 h-10 rounded-full" style={{ background: "rgba(184,137,43,0.15)" }} />
       </div>
     );
   }

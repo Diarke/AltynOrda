@@ -39,6 +39,9 @@ export interface ApiCity {
   significance?: string | null;
   historical_facts?: string[] | null;
   trade_info?: string | null;
+  sort_order: number;
+  // null when the request was anonymous (no user to evaluate journey progress against).
+  is_unlocked: boolean | null;
   created_at: string;
 }
 
@@ -152,6 +155,36 @@ export interface ApiCertificate {
   certificate_code: string;
   issued_at: string;
   created_at: string;
+}
+
+export interface ApiGroup {
+  id: string;
+  name: string;
+  owner_id: string;
+  invite_code: string;
+  member_count: number;
+  created_at: string;
+}
+
+export interface ApiGroupMember {
+  user_id: string;
+  username: string;
+  avatar_url: string | null;
+  level: number;
+  xp: number;
+  is_owner: boolean;
+  joined_at: string;
+}
+
+export interface ApiLeaderboardEntry {
+  rank: number;
+  user_id: string;
+  username: string;
+  avatar_url: string | null;
+  level: number;
+  xp: number;
+  coins: number;
+  completed_quests: number;
 }
 
 export interface ApiHistoricalFigure {
@@ -444,8 +477,26 @@ export async function listAchievements(language: ApiLanguage = "kk") {
   return request<ApiAchievement[]>(`/progress/achievements?language=${language}`);
 }
 
+export interface ApiQuestCompletionResponse {
+  success: boolean;
+  message: string;
+  xp_gained: number;
+  coins_gained: number;
+  level: number;
+  unlocks: Record<string, string[]>;
+  // Set when this was the city's last required quest — the next city in the
+  // linear journey sequence just opened.
+  unlocked_city: ApiCity | null;
+}
+
 export async function completeQuest(questId: string) {
-  return request<{ success: boolean; message: string; xp_gained: number; coins_gained: number; level: number; unlocks: Record<string, string[]> }>(`/progress/quests/${questId}/complete`, {
+  return request<ApiQuestCompletionResponse>(`/progress/quests/${questId}/complete`, {
+    method: "POST",
+  });
+}
+
+export async function unlockNextCity(language: ApiLanguage = "kk") {
+  return request<{ unlocked: boolean; city: ApiCity | null }>(`/cities/unlock-next?language=${language}`, {
     method: "POST",
   });
 }
@@ -459,6 +510,36 @@ export async function issueCertificate(input: { title?: string }) {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export async function createGroup(input: { name: string }) {
+  return request<ApiGroup>("/groups/create", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function joinGroup(input: { invite_code: string }) {
+  return request<ApiGroup>("/groups/join", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listMyGroups() {
+  return request<ApiGroup[]>("/groups/mine");
+}
+
+export async function getGroup(groupId: string) {
+  return request<ApiGroup>(`/groups/${groupId}`);
+}
+
+export async function listGroupMembers(groupId: string) {
+  return request<ApiGroupMember[]>(`/groups/${groupId}/members`);
+}
+
+export async function getGroupLeaderboard(groupId: string) {
+  return request<ApiLeaderboardEntry[]>(`/groups/${groupId}/leaderboard`);
 }
 
 export async function chatWithHistorian(message: string, cityId?: string | null, language?: ApiLanguage) {
@@ -719,6 +800,9 @@ export function useProgress(enabled = true) {
       // Completing a quest can unlock achievements/artifacts server-side, each of
       // which creates a notification — refresh right away instead of waiting for the poll.
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      // A quest completion can also unlock the next city in the linear journey —
+      // refetch so the map/carousel reflect the new unlock state immediately.
+      queryClient.invalidateQueries({ queryKey: ["cities"] });
     },
   });
 
@@ -758,6 +842,62 @@ export function useCertificates(enabled = true) {
     certificatesQuery,
     issueCertificateMutation,
   };
+}
+
+export function useGroups(enabled = true) {
+  const queryClient = useQueryClient();
+  const myGroupsQuery = useQuery({
+    queryKey: ["groups", "mine"],
+    queryFn: listMyGroups,
+    enabled: Boolean(getAccessToken()) && enabled,
+    staleTime: 60_000,
+    retry: 2,
+  });
+
+  const invalidateMine = () => queryClient.invalidateQueries({ queryKey: ["groups", "mine"] });
+
+  const createGroupMutation = useMutation({
+    mutationFn: createGroup,
+    onSuccess: invalidateMine,
+  });
+
+  const joinGroupMutation = useMutation({
+    mutationFn: joinGroup,
+    onSuccess: invalidateMine,
+  });
+
+  return {
+    myGroupsQuery,
+    createGroupMutation,
+    joinGroupMutation,
+  };
+}
+
+export function useGroup(groupId: string | undefined) {
+  const enabled = Boolean(getAccessToken()) && Boolean(groupId);
+  const groupQuery = useQuery({
+    queryKey: ["groups", groupId],
+    queryFn: () => getGroup(groupId as string),
+    enabled,
+    staleTime: 60_000,
+    retry: 2,
+  });
+  const membersQuery = useQuery({
+    queryKey: ["groups", groupId, "members"],
+    queryFn: () => listGroupMembers(groupId as string),
+    enabled,
+    staleTime: 30_000,
+    retry: 2,
+  });
+  const leaderboardQuery = useQuery({
+    queryKey: ["groups", groupId, "leaderboard"],
+    queryFn: () => getGroupLeaderboard(groupId as string),
+    enabled,
+    staleTime: 30_000,
+    retry: 2,
+  });
+
+  return { groupQuery, membersQuery, leaderboardQuery };
 }
 
 export function useChatMutation() {

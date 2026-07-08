@@ -49,6 +49,7 @@ class NotificationType(StrEnum):
     CERTIFICATE_READY = "certificate_ready"
     DAILY_QUEST_REFRESHED = "daily_quest_refreshed"
     DAILY_REWARD = "daily_reward"
+    CITY_UNLOCKED = "city_unlocked"
 
 
 class Language(StrEnum):

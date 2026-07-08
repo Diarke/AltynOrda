@@ -208,12 +208,12 @@ export function CertificatesPage() {
             <DialogTitle className="orda-cinzel">Preview</DialogTitle>
           </DialogHeader>
           {previewTarget && (
-            <div className="rounded-2xl p-6 text-center border" style={{ background: "linear-gradient(135deg, #171A20 0%, #1A1C14 50%, #171A20 100%)", borderColor: "rgba(212,175,55,0.25)" }}>
-              <Award size={28} color="#D4AF37" className="mx-auto mb-3" />
-              <h3 className="orda-cinzel text-lg font-bold mb-1" style={{ color: "#D4AF37" }}>{previewTarget.title}</h3>
-              <p className="text-xs mb-3" style={{ color: "#B7BAC3" }}>{previewTarget.description}</p>
-              <p className="text-sm" style={{ color: "#F6F4EC" }}>Awarded to {username(previewTarget.user_id)}</p>
-              <p className="text-[11px] mt-2" style={{ color: "#B7BAC3" }}>{previewTarget.certificate_code} · {previewTarget.completion_percent}% complete</p>
+            <div className="rounded-2xl p-6 text-center border" style={{ background: "linear-gradient(135deg, #E2D3AC 0%, #DCCBA0 50%, #E2D3AC 100%)", borderColor: "rgba(184,137,43,0.25)" }}>
+              <Award size={28} color="#B8892B" className="mx-auto mb-3" />
+              <h3 className="orda-cinzel text-lg font-bold mb-1" style={{ color: "#B8892B" }}>{previewTarget.title}</h3>
+              <p className="text-xs mb-3" style={{ color: "#5C4E38" }}>{previewTarget.description}</p>
+              <p className="text-sm" style={{ color: "#2E2013" }}>Awarded to {username(previewTarget.user_id)}</p>
+              <p className="text-[11px] mt-2" style={{ color: "#5C4E38" }}>{previewTarget.certificate_code} · {previewTarget.completion_percent}% complete</p>
             </div>
           )}
         </DialogContent>

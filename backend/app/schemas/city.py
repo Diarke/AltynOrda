@@ -19,6 +19,10 @@ class CityResponse(BaseSchema):
     significance: str | None
     historical_facts: list[str] | None
     trade_info: str | None
+    sort_order: int
+    # None for anonymous requests (no user to evaluate against); True/False once
+    # a user's linear-journey progress has been checked.
+    is_unlocked: bool | None = None
     created_at: datetime
 
 
@@ -39,3 +43,10 @@ class CitySummaryResponse(BaseSchema):
     latitude: float
     longitude: float
     image_url: str | None
+    sort_order: int
+    is_unlocked: bool | None = None
+
+
+class UnlockNextCityResponse(BaseSchema):
+    unlocked: bool
+    city: CitySummaryResponse | None = None

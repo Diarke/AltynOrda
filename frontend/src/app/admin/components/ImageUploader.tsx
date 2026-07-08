@@ -50,7 +50,7 @@ export function ImageUploader({ value, onChange, aspect = 4 / 3 }: ImageUploader
   return (
     <div className="space-y-2">
       {value ? (
-        <div className="relative w-full h-40 rounded-lg overflow-hidden border" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+        <div className="relative w-full h-40 rounded-lg overflow-hidden border" style={{ borderColor: "rgba(59,42,19,0.08)" }}>
           <img src={value} alt="" className="w-full h-full object-cover" />
           <div className="absolute top-2 right-2 flex gap-1.5">
             <button
@@ -74,7 +74,7 @@ export function ImageUploader({ value, onChange, aspect = 4 / 3 }: ImageUploader
       ) : (
         <div
           className="w-full h-40 rounded-lg border border-dashed flex flex-col items-center justify-center gap-2 text-muted-foreground"
-          style={{ borderColor: "rgba(255,255,255,0.12)" }}
+          style={{ borderColor: "rgba(59,42,19,0.12)" }}
         >
           <ImageIcon size={24} />
           <span className="text-xs">No image selected</span>
